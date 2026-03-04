@@ -28,7 +28,13 @@ def print_metrics(metrics, title="策略表现报告 (STRATEGY PERFORMANCE REPOR
     print(title)
     print("=" * 40)
     for k, v in metrics.items():
-        print(f"{k:<15}: {_fmt_val(k, v):>15}")
+        # 对关键指标做更明确的说明，但保持原 key 便于代码复用
+        label = k
+        if k == "策略总回报":
+            label = "策略总回报(基于净值曲线)"
+        elif k == "基准总回报":
+            label = "基准总回报(基于净值曲线)"
+        print(f"{label:<20}: {_fmt_val(k, v):>15}")
     print("=" * 40)
 
 
@@ -94,21 +100,26 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         f"| 买入信号 | MA{ma_s}金叉MA{ma_l} 且 Close>MA{ma_s} |",
         "| 卖出信号 | MA死叉 |",
         "",
-        "### 盈亏汇总",
+        "### 盈亏汇总（基于实际成交）",
         "",
-        "| 指标 | 数值 |",
-        "| :--- | :--- |",
-        f"| 总盈亏 | ${total_pnl:,.2f} |",
-        f"| 总收益率 | {total_return_pct:.2f}% |",
-        f"| 最终资产 | ${initial + total_pnl:,.2f} |",
+        "| 指标 | 数值 |说明|",
+        "| :--- | :--- |:---|",
+        f"| 总盈亏 | ${total_pnl:,.2f} | 基于每笔实际成交价与股数累计的盈亏金额 |",
+        f"| 总收益率(成交口径) | {total_return_pct:.2f}% | 总盈亏 / 初始资金，仅按交易结果计算 |",
+        f"| 最终资产 | ${initial + total_pnl:,.2f} | 初始资金 + 总盈亏 |",
         "",
-        "### 核心指标",
+        "### 核心指标（基于净值曲线）",
         "",
         "| 指标 | 数值 |",
         "| :--- | :--- |",
     ]
     for k, v in metrics.items():
-        lines.append(f"| {k} | {_fmt_val(k, v)} |")
+        label = k
+        if k == "策略总回报":
+            label = "策略总回报(净值口径)"
+        elif k == "基准总回报":
+            label = "基准总回报(净值口径)"
+        lines.append(f"| {label} | {_fmt_val(k, v)} |")
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

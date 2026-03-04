@@ -17,7 +17,7 @@ import pandas as pd
 def run(df, ma_short=5, ma_long=30, use_price_filter=True, entry_delay=0, exit_delay=0,
         initial_capital=100000, position_ratio=1.0):
     """
-    在行情数据上计算 MA 金叉死叉的持仓与收益。
+    在行情数据上计算 MA 金叉死叉的持仓与收益（买入/卖出价格使用当根 K 线的开盘价 Open）。
 
     参数
     ----
@@ -44,15 +44,15 @@ def run(df, ma_short=5, ma_long=30, use_price_filter=True, entry_delay=0, exit_d
     """
     df = df.copy()
     # 均线（列名固定为 MA5/MA30，与周期一致时便于阅读），保留两位小数
-    df["MA5"] = df["Close"].rolling(window=ma_short).mean().round(2)
-    df["MA30"] = df["Close"].rolling(window=ma_long).mean().round(2)
+    df["MA5"] = df["Close"].rolling(window=ma_short).mean().round(3)
+    df["MA30"] = df["Close"].rolling(window=ma_long).mean().round(3)
 
     # 金叉：当前短>长，前一根短<=长
     cross_long = (df["MA5"] >= df["MA30"]) & (df["MA5"].shift(1) < df["MA30"].shift(1))
     # 死叉：当前短<长，前一根短>=长
-    sell_signal = (df["MA5"] <= df["MA30"]) & (df["MA5"].shift(1) > df["MA30"].shift(1))
+    sell_signal = (df["MA5"] < df["MA30"]) & (df["MA5"].shift(1) >= df["MA30"].shift(1))
     # 入场过滤：不启用则恒为 True（这里始终使用与 df 同索引的布尔序列，避免 use_price_filter=False 时标量 True 无法 iloc）
-    price_ok = df["Close"] >= df["MA5"] if use_price_filter else pd.Series(True, index=df.index)
+    price_ok = df["Close"] > df["MA5"] if use_price_filter else pd.Series(True, index=df.index)
     buy_signal = cross_long & price_ok
 
     # 打印所有金叉和死叉信号
@@ -81,16 +81,14 @@ def run(df, ma_short=5, ma_long=30, use_price_filter=True, entry_delay=0, exit_d
 
     for i in range(len(df)):
         date = df.index[i]
-        price = df["Close"].iloc[i]
+        # 交易价格统一使用当根 K 线的开盘价
+        price = df["Open"].iloc[i]
 
         # 死叉信号检测：信号当根标记为 0，后续 K 线递增
         if sell_signal.iloc[i]:
             if position == 1:
                 # 持仓时的死叉：用于出场延迟计数
                 exit_signal_wait = 0  # 新信号出现，标记为第 0 根
-            else:
-                # 空仓时的死叉：取消之前的金叉等待信号（例如 2014-05-08 这种情况）
-                signal_wait = -1
         elif exit_signal_wait >= 0 and position == 1:
             exit_signal_wait += 1  # 后续 K 线递增计数
 
@@ -133,9 +131,9 @@ def run(df, ma_short=5, ma_long=30, use_price_filter=True, entry_delay=0, exit_d
             # 持仓期间不保留旧的金叉等待计数，避免平仓后直接用旧信号再次入场
             signal_wait = -1
 
-        # 延迟满足 + 空仓 + 价格条件满足 → 开仓
+        # 延迟满足 + 空仓 → 开仓
         # entry_delay=0 时，signal_wait>=1 即信号后第 1 根 K 线买入
-        if signal_wait >= entry_delay + 1 and position == 0 and price_ok.iloc[i]:
+        if signal_wait >= entry_delay + 1 and position == 0:
             signal_wait = -1  # 重置入场信号计数器
             position = 1
             entry_price = price
@@ -149,22 +147,25 @@ def run(df, ma_short=5, ma_long=30, use_price_filter=True, entry_delay=0, exit_d
                 trade_id -= 1
             else:
                 cash -= shares * price
+                # 特殊处理：如果当前这根 K 线已经出现死叉，
+                # 则视为「前一日金叉、当日死叉」的情况：
+                # 仍在当日开盘买入，但把 exit_signal_wait 置为 0，
+                # 这样在下一根 K 线（exit_delay=0 时）强制卖出。
+                if sell_signal.iloc[i]:
+                    exit_signal_wait = 0
             trades.append({
                 "trade_id": trade_id,
                 "date": date,
                 "action": "买入",
                 "price": round(price, 2),
-                "shares": shares,
+                "shares": shares, # 持仓股数
                 "position_value": round(shares * price, 2),
-                "cash": round(cash, 2),
+                "cash": round(cash, 2), # 可用现金
                 "pnl": None, # 单笔盈亏（金额）
                 "pnl_pct": None, # 单笔盈亏（百分比）
                 "cum_pnl": None, # 累计盈亏（金额）
                 "cum_pnl_pct": None # 累计盈亏（百分比）
             })
-        # 等待太久还没开仓 → 放弃这次信号
-        # if signal_wait > entry_delay + 1 and position == 0:
-        #     signal_wait = -1
 
         # 等待太久还没平仓（价格又涨回去了）→ 放弃这次出场信号
         if exit_signal_wait > exit_delay + 1 and position == 1:

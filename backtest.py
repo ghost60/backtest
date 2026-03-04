@@ -73,7 +73,7 @@ def run_backtest(config=None, config_path=None):
     out_dir = paths["output_dir"]
 
     # 6. 输出并保存交易清单
-    report.print_trades(trades)
+    # report.print_trades(trades)
     trades_csv_path = os.path.join(out_dir, "trades.csv")
     report.save_trades_csv(trades, trades_csv_path)
     md_path = os.path.join(out_dir, paths["metrics_filename"])
@@ -151,7 +151,7 @@ def run_hedge_backtest(config=None, config_path=None):
     out_dir = paths["output_dir"]
     
     # 6. 交易清单
-    report.print_trades(trades)
+    # report.print_trades(trades)
     # 动态生成文件名，如 trades_tsla_azo.csv 或 trades_tsla_azo_orly.csv
     hedge_suffix = "_".join([n.lower() for n in hedge_names])
     trades_csv_path = os.path.join(out_dir, f"trades_tsla_{hedge_suffix}.csv")
