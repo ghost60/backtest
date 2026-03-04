@@ -1,0 +1,37 @@
+# ============================================================
+# TSLA + AZO + ORLY 三资产对冲回测配置
+# ============================================================
+
+data:
+  path: "data/TSLA_25Y_yFinance.csv"
+  start_date: "2011-01-01"
+  end_date: "2025-12-31"
+
+strategy:
+  name: "ma_cross_hedge_triple"
+  ma_short: 5
+  ma_long: 30
+  use_price_filter: true
+  entry_delay: 0
+  exit_delay: 0
+
+# ---------- 资金管理 ----------
+capital:
+  initial: 100000
+  position_ratio: 1.0
+
+hedge:
+  enabled: true
+  symbols:
+    - name: "AZO"
+      path: "data/AZO_25Y_yFinance.csv"
+      weight: 0.5
+    - name: "ORLY"
+      path: "data/ORLY_25Y_yFinance.csv"
+      weight: 0.5
+
+output:
+  dir: "result"
+  chart_filename: "backtest_results_tsla_azo_orly.png"
+  metrics_filename: "backtest_metrics_tsla_azo_orly.md"
+  font_sans_serif: "Arial Unicode MS"

@@ -1,0 +1,40 @@
+# ============================================================
+# TSLA 量化回测 - 默认配置
+# 可通过 -c 指定其他 YAML 文件覆盖
+# ============================================================
+
+# ---------- 数据与回测区间 ----------
+data:
+  # 主标的 CSV 路径：相对项目根或绝对路径
+  path: "data/TSLA_25Y_yFinance.csv"
+  # 回测起止日期（包含）
+  start_date: "2011-01-01"
+  end_date: "2025-12-31"
+
+# ---------- 策略参数（MA 金叉死叉） ----------
+strategy:
+  name: "ma_cross"              # 策略标识，后续扩展多策略时可据此分支
+  ma_short: 5                   # 短均线周期
+  ma_long: 30                   # 长均线周期
+  use_price_filter: true       # 是否启用入场过滤：仅当 Close > 短均线 时允许开多
+  entry_delay: 0                # 金叉后延迟几根 K 线才允许入场，0 表示下一根即可
+  exit_delay: 0                 # 死叉后延迟几根 K 线才允许出场，0 表示下一根即可
+
+# ---------- 资金管理 ----------
+capital:
+  initial: 100000               # 初始资金（美元）
+  position_ratio: 1.0           # 持仓比例：1.0 表示全仓，0.5 表示半仓
+
+# ---------- 输出 ----------
+output:
+  dir: "result"            # 结果目录，相对项目根；图表与 Markdown 均写在此目录
+  chart_filename: "backtest_results_tsla.png"
+  metrics_filename: "backtest_metrics_tsla.md"
+  chart_figsize: [12, 10]       # 图表宽高（英寸）
+  font_sans_serif: "Arial Unicode MS"   # 图表中文；Mac 用此，Windows 可改为 SimHei
+
+# ---------- 扩展预留（当前未使用） ----------
+# symbols: ["TSLA"]
+# hedge:
+#   enabled: false
+#   symbol: "AZO"
