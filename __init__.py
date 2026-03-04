@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-包初始化，定义 tsla 包及对外接口
+包初始化，定义 backtest 包及对外接口
 TSLA 量化回测包
 
 - run_backtest(config=None, config_path=None)：执行一次完整回测，返回 metrics / df_clean / config

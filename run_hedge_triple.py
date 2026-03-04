@@ -6,13 +6,13 @@ import os
 import sys
 from pathlib import Path
 
-# 确保能找到 tsla 包
+# 确保能找到 backtest 包
 curr_dir = Path(__file__).resolve().parent
 if str(curr_dir.parent) not in sys.path:
     sys.path.insert(0, str(curr_dir.parent))
 
-from tsla.backtest import run_hedge_backtest
-from tsla.config_loader import load_config
+from backtest.backtest import run_hedge_backtest
+from backtest.config_loader import load_config
 
 if __name__ == "__main__":
     # 指定配置文件路径

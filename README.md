@@ -1,11 +1,14 @@
-# TSLA 量化回测项目
+环境安装：安装conda，创建新环境，运行pip install -r requirements.txt
+
+# 量化回测项目（backtest 包）
+
 
 MA 金叉死叉策略回测，模块化、可配置、便于扩展。
 
 ## 项目结构
 
 ```
-tsla/
+backtest/
 ├── config/
 │   └── default.yaml      # 默认配置（数据路径、回测区间、策略参数、输出目录）
 ├── config_loader.py      # 配置加载与路径解析
@@ -15,31 +18,29 @@ tsla/
 ├── charts.py             # 资金曲线与年度收益图
 ├── report.py             # 终端报告与 Markdown 输出
 ├── backtest.py           # 回测流程编排
-├── run.py                # 推荐入口（可指定配置文件）
-├── main.py               # 包入口（python -m tsla.main）
-├── requirements.txt
+├── main.py               # 包入口（python -m backtest.main）
+├── run_hedge_azo.py      # TSLA+AZO 对冲一键脚本
+├── run_hedge_triple.py   # TSLA+AZO+ORLY 对冲一键脚本
+├── strategy_viewer.py    # 终端版策略查看器
+├── strategy_viewer_html.py  # HTML 版策略查看器
+├── ma_param_search.py    # MA 参数搜索脚本
 └── README.md
 ```
 
 ## 快速开始
 
-1. 安装依赖（在项目根或 tsla 目录下）:
+1. 安装依赖（在项目根或 backtest 目录下）:
    ```bash
-   pip install -r tsla/requirements.txt
+   pip install -r backtest/requirements.txt
    ```
 
 2. 修改配置（可选）:
-   - 编辑 `tsla/config/default.yaml` 中的 `data.path`、`data.start_date`/`end_date`、`strategy.*`、`output.dir` 等。
+   - 编辑 `backtest/config/default.yaml` 中的 `data.path`、`data.start_date`/`end_date`、`strategy.*`、`output.dir` 等。
 
 3. 运行回测:
-   - 在项目根目录 `xbx_code` 下:
+- 在项目根目录（backtest 的上一层目录）下:
      ```bash
-     python tsla/run.py
-     python tsla/run.py -c tsla/config/default.yaml
-     ```
-   - 或以包方式运行:
-     ```bash
-     python -m tsla.main -c tsla/config/default.yaml
+     python -m backtest.main -c backtest/config/default.yaml
      ```
 
 结果会输出到配置中的 `output.dir`（默认 `tsla_result/`），包括:

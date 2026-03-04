@@ -33,4 +33,3 @@ output:
   dir: "result"
   chart_filename: "backtest_results_tsla_azo.png"
   metrics_filename: "backtest_metrics_tsla_azo.md"
-  font_sans_serif: "Arial Unicode MS"

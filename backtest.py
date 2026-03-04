@@ -80,7 +80,7 @@ def run_backtest(config=None, config_path=None):
     report.write_markdown(md_path, start_date, end_date, strategy_params, result_metrics, capital_params, trades)
 
     # 6. 图表
-    charts.apply_style(out_cfg.get("font_sans_serif", "Arial Unicode MS"))
+    charts.apply_style(out_cfg.get("font_sans_serif"))
     chart_path = os.path.join(out_dir, paths["chart_filename"])
     charts.generate_charts(df_clean, chart_path, figsize=tuple(out_cfg.get("chart_figsize", [12, 10])))
 
@@ -162,7 +162,7 @@ def run_hedge_backtest(config=None, config_path=None):
                                capital_params=capital_params, trades=trades)
 
     # 6. 图表
-    charts.apply_style(out_cfg.get("font_sans_serif", "Arial Unicode MS"))
+    charts.apply_style(out_cfg.get("font_sans_serif"))
     chart_path = os.path.join(out_dir, paths["chart_filename"])
     charts_hedge.generate_charts_hedge(df_clean, chart_path, hedge_names, 
                                        figsize=tuple(out_cfg.get("chart_figsize", [14, 12])))

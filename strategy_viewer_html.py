@@ -10,9 +10,9 @@
   - 下半部分：在当前时间窗口内动态刷新的成交清单与区间统计（胜率、盈亏等）
 
 用法示例（在项目根的上一层目录运行）：
-    python -m tsla.strategy_viewer_html -c tsla/config/default.yaml
+    python -m backtest.strategy_viewer_html -c backtest/config/default.yaml
 
-也可以在 tsla 目录内直接运行脚本：
+也可以在 backtest 目录内直接运行脚本：
     python strategy_viewer_html.py -c config/default.yaml
 """
 
@@ -25,13 +25,13 @@ from pathlib import Path
 
 import pandas as pd
 
-# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 tsla
-_PKG_DIR = Path(__file__).resolve().parent  # tsla/
+# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 backtest
+_PKG_DIR = Path(__file__).resolve().parent  # backtest/
 if str(_PKG_DIR.parent) not in sys.path:
     sys.path.insert(0, str(_PKG_DIR.parent))
 
-from tsla.backtest import run_backtest  # type: ignore
-from tsla.config_loader import (  # type: ignore
+from backtest.backtest import run_backtest  # type: ignore
+from backtest.config_loader import (  # type: ignore
     get_capital_params,
     get_output_paths,
     get_strategy_params,

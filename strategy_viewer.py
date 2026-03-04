@@ -9,9 +9,9 @@
 - 可选生成专用「策略查看器图」：价格 + 信号 + MA 指标 + 权益曲线 + 回撤 + 持仓
 
 用法示例（在项目根的上一层目录运行）：
-    python -m tsla.strategy_viewer -c tsla/config/default.yaml --viewer-chart
+    python -m backtest.strategy_viewer -c backtest/config/default.yaml --viewer-chart
 
-也可以在 tsla 目录内直接运行脚本：
+也可以在 backtest 目录内直接运行脚本：
     python strategy_viewer.py -c config/default.yaml --viewer-chart
 """
 
@@ -25,13 +25,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 tsla
-_PKG_DIR = Path(__file__).resolve().parent  # tsla/
+# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 backtest
+_PKG_DIR = Path(__file__).resolve().parent  # backtest/
 if str(_PKG_DIR.parent) not in sys.path:
     sys.path.insert(0, str(_PKG_DIR.parent))
 
-from tsla.backtest import run_backtest, run_hedge_backtest  # type: ignore
-from tsla.config_loader import (  # type: ignore
+from backtest.backtest import run_backtest, run_hedge_backtest  # type: ignore
+from backtest.config_loader import (  # type: ignore
     load_config,
     get_output_paths,
     get_strategy_params,

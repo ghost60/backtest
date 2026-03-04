@@ -8,13 +8,30 @@
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def apply_style(font_sans_serif="Arial Unicode MS"):
-    """设置全局绘图风格：中文字体、负号正常显示。Mac 用 Arial Unicode MS，Windows 可用 SimHei。"""
+def apply_style(font_sans_serif=None):
+    """
+    设置全局绘图风格：中文字体、负号正常显示。
+
+    - 若未显式传入 font_sans_serif，则根据运行环境自动选择：
+      - Windows: 使用 SimHei
+      - macOS: 使用 Arial Unicode MS
+      - 其他系统: 使用 DejaVu Sans
+    - 也可以手动传入任意已安装字体名称覆盖上述默认值。
+    """
+    if font_sans_serif is None:
+        if sys.platform.startswith("win"):
+            font_sans_serif = "SimHei"
+        elif sys.platform == "darwin":
+            font_sans_serif = "Arial Unicode MS"
+        else:
+            font_sans_serif = "DejaVu Sans"
+
     plt.rcParams["font.sans-serif"] = [font_sans_serif]
     plt.rcParams["axes.unicode_minus"] = False
 

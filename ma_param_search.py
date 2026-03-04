@@ -4,9 +4,9 @@
 MA 双均线策略参数搜索脚本
 
 用法：
-- 在 `tsla` 包的上一层目录运行（包方式）：
-    python -m tsla.ma_param_search
-- 也可以在 `tsla` 目录内直接运行脚本：
+- 在 `backtest` 包的上一层目录运行（包方式）：
+    python -m backtest.ma_param_search
+- 也可以在 `backtest` 目录内直接运行脚本：
     python ma_param_search.py
 
 逻辑：
@@ -26,13 +26,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 tsla
-_PKG_DIR = Path(__file__).resolve().parent  # tsla/
+# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 backtest
+_PKG_DIR = Path(__file__).resolve().parent  # backtest/
 if str(_PKG_DIR.parent) not in sys.path:
     sys.path.insert(0, str(_PKG_DIR.parent))
 
-from tsla.backtest import run_backtest
-from tsla.config_loader import load_config, get_output_paths
+from backtest.backtest import run_backtest
+from backtest.config_loader import load_config, get_output_paths
 
 
 # 可调参数网格（按需修改）

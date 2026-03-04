@@ -2,20 +2,20 @@
 """
 以包方式运行回测时的入口（需在项目根下执行）
 
-用法：python -m tsla.main
-      python -m tsla.main -c tsla/config/default.yaml
+用法：python -m backtest.main
+      python -m backtest.main -c backtest/config/default.yaml
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-# 将项目根加入 path，以便 python -m tsla.main 能正确解析 tsla 包
+# 将项目根加入 path，以便 python -m backtest.main 能正确解析 backtest 包
 _PKG_DIR = Path(__file__).resolve().parent
 if str(_PKG_DIR.parent) not in sys.path:
     sys.path.insert(0, str(_PKG_DIR.parent))
 
-from tsla.backtest import run_backtest
+from backtest.backtest import run_backtest
 
 def main():
     parser = argparse.ArgumentParser(description="TSLA MA 金叉死叉策略回测")
@@ -29,8 +29,8 @@ def main():
     config_path = args.config
     # -----------------------
 
-    from tsla.config_loader import load_config, get_hedge_config
-    from tsla.backtest import run_backtest, run_hedge_backtest
+    from backtest.config_loader import load_config, get_hedge_config
+    from backtest.backtest import run_backtest, run_hedge_backtest
 
     config = load_config(config_path)
     # hedge_cfg = get_hedge_config(config)

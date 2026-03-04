@@ -17,9 +17,9 @@ except ImportError:
     yaml = None
 
 # ---------- 路径常量 ----------
-# 当前包所在目录，即 tsla/
+# 当前包所在目录，即 backtest/
 PACKAGE_DIR = Path(__file__).resolve().parent
-# 项目根目录，即 tsla/，用于解析「相对项目根」的路径
+# 项目根目录，即 backtest/，用于解析「相对项目根」的路径
 PROJECT_ROOT = PACKAGE_DIR
 
 
