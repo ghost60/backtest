@@ -9,7 +9,7 @@ data:
   path: "data/TSLA_25Y_yFinance.csv"
   # 回测起止日期（包含）
   start_date: "2011-01-01"
-  end_date: "2025-12-31"
+  end_date: "2026-03-04"
 
 # ---------- 策略参数（MA 金叉死叉） ----------
 strategy:
