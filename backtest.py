@@ -9,15 +9,15 @@
 
 import os
 
-# 以“模块别名”的方式导入，便于后续 charts.apply_style / metrics.calculate_equity 等调用
-from report import charts
-from report import metrics
-from report import report
-import data_loader
-from factor import factor_double_ma
-from engine.single_asset import run_single_asset
-from report.quan_stats_report import generate_qs_report
-from config_loader import get_capital_params, get_output_paths, get_strategy_params, load_config
+# 包内相对导入，便于作为 backtest 包运行时正确解析（如 python -m backtest.tools.ma_param_search）
+from .report import charts
+from .report import metrics
+from .report import report
+from . import data_loader
+from .factor import factor_double_ma
+from .engine.single_asset import run_single_asset
+from .report.quan_stats_report import generate_qs_report
+from .config_loader import get_capital_params, get_output_paths, get_strategy_params, load_config
 
 
 def run_backtest(config=None, config_path=None):
@@ -120,9 +120,9 @@ def run_hedge_backtest(config=None, config_path=None):
     """
     执行对冲回测流程。
     """
-    from report import charts_hedge
-    from factor import strategy_hedge
-    from config_loader import get_hedge_config
+    from .report import charts_hedge
+    from .factor import factor_double_ma_hedge
+    from .config_loader import get_hedge_config
 
     if config is None:
         config = load_config(config_path)
@@ -159,7 +159,7 @@ def run_hedge_backtest(config=None, config_path=None):
 
     # 2. 运行对冲策略
     print("正在运行对冲策略...")
-    df_combined, trades = strategy_hedge.run(tsla_df, hedge_dfs, weights, 
+    df_combined, trades = factor_double_ma_hedge.run(tsla_df, hedge_dfs, weights, 
                                             **strategy_params, **capital_params,
                                             hedge_names=hedge_names)
 

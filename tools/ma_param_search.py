@@ -26,18 +26,21 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-# 参考 main.py，将项目根加入 sys.path，保证脚本/包两种运行方式都能导入 backtest
-_PKG_DIR = Path(__file__).resolve().parent  # backtest/
-if str(_PKG_DIR.parent) not in sys.path:
-    sys.path.insert(0, str(_PKG_DIR.parent))
+# 参考 main.py，将「包含 backtest 包的上层目录」加入 sys.path，
+# 这样既支持包方式（python -m backtest.tools.ma_param_search），
+# 也支持在 backtest 目录内直接运行脚本（python tools/ma_param_search.py）。
+_TOOLS_DIR = Path(__file__).resolve().parent          # backtest/tools
+_PROJECT_PARENT = _TOOLS_DIR.parent.parent            # backtest 的上层目录
+if str(_PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_PARENT))
 
 from backtest.backtest import run_backtest
 from backtest.config_loader import load_config, get_output_paths
 
 
 # 可调参数网格（按需修改）
-SHORT_LIST = range(3, 21, 3)  # 3,5,7,...,19
-LONG_LIST = range(30, 90, 10)  # 30,35,...,120
+SHORT_LIST = range(2, 15, 3)  # 3,5,7,...,19
+LONG_LIST = range(30, 60, 10)  # 30,35,...,120
 
 # 评价指标 key（来自 metrics.calculate_metrics 的返回）
 # 这里改为按「策略总回报」进行寻参排序

@@ -1,49 +1,51 @@
 # -*- coding: utf-8 -*-
 """
-对冲策略模块
+Double MA 对冲策略模块
 
 逻辑简述：
 - 主标的（如 TSLA）出现买入信号时：卖出对冲标的，全仓买入主标的。
-- 主标的（如 TSLA）出现卖出信号或持仓无效时：平仓主标的，按权重分配买入对冲标的。
+- 主标的出现卖出信号或持仓无效时：平仓主标的，按权重分配买入对冲标的。
 - 始终保持 100% 持仓（在主标的与对冲组合之间切换）。
+
+因子层：复用 factor_double_ma.calculate_double_ma_factors 计算主标的 MA 与买卖信号，不重复实现。
+撮合层：本模块仅负责「主标 vs 对冲组合」的切换与资金/交易记录。
 """
 
 import pandas as pd
-import numpy as np
+
+from .factor_double_ma import calculate_double_ma_factors
 
 
-def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=True, 
+def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=True,
         entry_delay=0, exit_delay=0, initial_capital=100000, position_ratio=1.0, hedge_names=None):
     """
-    运行对冲策略。
+    运行 Double MA 对冲策略。
 
     参数
     ----
     tsla_df : pd.DataFrame
-        主标的数据（需含 Close）。
+        主标的数据（需含 Open, Close）。
     hedge_dfs : list[pd.DataFrame]
-        对冲标的数据列表。
+        对冲标的数据列表（需含 Open, Close）。
     weights : list[float]
         对冲标的权重分配（和应为 1.0）。
     ma_short, ma_long : int
-        TSLA 的均线周期。
+        主标的 Double MA 周期，与 factor_double_ma 一致。
     use_price_filter : bool
-        是否使用收盘价过滤。
-    entry_delay : int
-        入场延迟。
-    exit_delay : int
-        出场延迟。
+        是否使用收盘价 > 短均线 过滤入场。
+    entry_delay, exit_delay : int
+        入场/出场延迟 K 数。
     initial_capital : float
         初始资金。
     position_ratio : float
         持仓比例。
-    exit_delay : int
-        出场延迟。
+    hedge_names : list[str], optional
+        对冲标的显示名称，用于交易记录。
 
     返回
     ----
-    pd.DataFrame
-        合并后的日频数据，含各标的持仓、收益及组合收益。
+    tuple
+        (combined_df, trades) 合并后的日频数据与交易清单。
     """
     # 1. 对齐日期
     common_dates = tsla_df.index
@@ -53,21 +55,17 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     tsla_df = tsla_df.loc[common_dates].copy()
     hedge_dfs = [hdf.loc[common_dates].copy() for hdf in hedge_dfs]
 
-    # 2. 计算 TSLA 信号（与 factor_double_ma.run 中的定义保持一致）
-    # 均线命名固定为 MA5 / MA30，便于与单标的回测对齐阅读
-    tsla_df["MA5"] = tsla_df["Close"].rolling(window=ma_short).mean().round(3)
-    tsla_df["MA30"] = tsla_df["Close"].rolling(window=ma_long).mean().round(3)
+    # 2. 因子层：复用 factor_double_ma 计算主标的 MA 与买卖信号（与单标的 Double MA 完全一致）
+    tsla_df = calculate_double_ma_factors(
+        tsla_df,
+        ma_short=ma_short,
+        ma_long=ma_long,
+        use_price_filter=use_price_filter,
+    )
+    buy_signal = tsla_df["MA_Buy_Signal"]
+    sell_signal = tsla_df["MA_Sell_Signal"]
 
-    # 金叉：当前短 >= 长，前一根短 < 长
-    cross_long = (tsla_df["MA5"] >= tsla_df["MA30"]) & (tsla_df["MA5"].shift(1) < tsla_df["MA30"].shift(1))
-    # 死叉：当前短 < 长，前一根短 >= 长
-    sell_signal = (tsla_df["MA5"] < tsla_df["MA30"]) & (tsla_df["MA5"].shift(1) >= tsla_df["MA30"].shift(1))
-
-    # 入场过滤逻辑与 factor_double_ma 完全一致，保持为逐行布尔序列，避免 use_price_filter=False 时标量 True 无法索引
-    price_ok = tsla_df["Close"] > tsla_df["MA5"] if use_price_filter else pd.Series(True, index=tsla_df.index)
-    buy_signal = cross_long & price_ok
-
-    # 3. 逐 K 线模拟持仓状态（对标 factor_double_ma.run，增加全资产价值追踪）
+    # 3. 撮合层：逐 K 线模拟主标 vs 对冲组合切换与资金
     tsla_pos_list = []
     # hedge_pos_matrix[hedge_idx][k_idx]
     hedge_pos_matrix = [[] for _ in range(len(hedge_dfs))]
