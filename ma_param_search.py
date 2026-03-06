@@ -36,17 +36,21 @@ from backtest.config_loader import load_config, get_output_paths
 
 
 # 可调参数网格（按需修改）
-SHORT_LIST = range(3, 21, 2)  # 3,5,7,...,19
-LONG_LIST = range(30, 121, 5)  # 30,35,...,120
+SHORT_LIST = range(3, 21, 3)  # 3,5,7,...,19
+LONG_LIST = range(30, 90, 10)  # 30,35,...,120
 
 # 评价指标 key（来自 metrics.calculate_metrics 的返回）
-# 可选："夏普比率"、"策略年化回报"、"策略总回报" 等
-TARGET_METRIC = "夏普比率"
+# 这里改为按「策略总回报」进行寻参排序
+TARGET_METRIC = "策略总回报"
 # 生成热力图时用于文件名的安全版本
 TARGET_METRIC_FNAME = TARGET_METRIC.replace("%", "pct").replace("/", "_").replace(" ", "")
 
 # 输出最优多少组参数
 TOP_N = 20
+
+# 用于“最优参数分箱图”的筛选比例：取前多少比例的参数组作为“最优集合”
+# 例如 0.1 表示取指标排名前 10% 的参数组合，再看它们在 ma_short / ma_long 上的分布
+TOP_BIN_FRACTION = 0.10
 
 
 def main():
@@ -114,18 +118,38 @@ def main():
 
     print(f"\n因子热力图已保存到: {heatmap_path}")
 
-    # 4. 生成目标指标的分箱图（直方图）
-    bin_fig_path = out_dir / f"ma_param_hist_{TARGET_METRIC_FNAME}.png"
-    plt.figure(figsize=(8, 6))
-    plt.hist(df_results[TARGET_METRIC].dropna(), bins=20, color="steelblue", edgecolor="black", alpha=0.8)
-    plt.xlabel(TARGET_METRIC)
-    plt.ylabel("参数组合数量")
-    plt.title(f"{TARGET_METRIC} 分布（参数组合分箱图）")
-    plt.tight_layout()
-    plt.savefig(bin_fig_path, dpi=150)
-    plt.close()
+    # 4. 生成“最优参数”分箱图：看最优参数集中在哪些区间（而不是指标值本身的分布）
+    # 取指标排名前 TOP_BIN_FRACTION 的参数组（至少 1 个）
+    top_k = max(1, int(len(df_results) * TOP_BIN_FRACTION))
+    df_best = df_results.nlargest(top_k, TARGET_METRIC).copy()
 
-    print(f"因子分箱图已保存到: {bin_fig_path}")
+    bin_fig_path = out_dir / f"ma_param_best_bins_{TARGET_METRIC_FNAME}.png"
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    # ma_short 分箱（按候选列表的离散取值做计数柱状图）
+    short_counts = df_best["ma_short"].value_counts().sort_index()
+    axes[0].bar(short_counts.index.astype(str), short_counts.values, color="steelblue", edgecolor="black", alpha=0.85)
+    axes[0].set_title(f"最优参数 ma_short 分布（TOP {top_k}）")
+    axes[0].set_xlabel("ma_short")
+    axes[0].set_ylabel("出现次数")
+    axes[0].tick_params(axis="x", rotation=45)
+    axes[0].grid(True, axis="y", alpha=0.2)
+
+    # ma_long 分箱
+    long_counts = df_best["ma_long"].value_counts().sort_index()
+    axes[1].bar(long_counts.index.astype(str), long_counts.values, color="darkorange", edgecolor="black", alpha=0.85)
+    axes[1].set_title(f"最优参数 ma_long 分布（TOP {top_k}）")
+    axes[1].set_xlabel("ma_long")
+    axes[1].set_ylabel("出现次数")
+    axes[1].tick_params(axis="x", rotation=45)
+    axes[1].grid(True, axis="y", alpha=0.2)
+
+    fig.suptitle(f"最优参数分箱图（按 {TARGET_METRIC} 排名取前 {TOP_BIN_FRACTION:.0%}）", y=1.05)
+    fig.tight_layout()
+    fig.savefig(bin_fig_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"最优参数分箱图已保存到: {bin_fig_path}")
 
     # 5. 按目标指标排序，并将 TOP N 输出到文件 & 终端
     all_results.sort(key=lambda x: x[TARGET_METRIC], reverse=True)

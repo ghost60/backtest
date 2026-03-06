@@ -54,16 +54,16 @@ def generate_qs_report(returns, benchmark=None, output_path="qs_report.html", ti
         print(f"QuantStats HTML 报告已生成: {output_path}")
 
         # 若传入的是字符串路径，转换为 Path 以便后续操作
-        from pathlib import Path
+        # from pathlib import Path
 
-        out_path = Path(output_path)
-        if out_path.is_file():
-            try:
-                import webbrowser
+        # out_path = Path(output_path)
+        # if out_path.is_file():
+        #     try:
+        #         import webbrowser
 
-                webbrowser.open(out_path.as_uri())
-            except Exception:
-                pass
+        #         webbrowser.open(out_path.as_uri())
+        #     except Exception:
+        #         pass
     except Exception as e:
         print(f"警告: 生成 QuantStats 报告失败: {e}")
 

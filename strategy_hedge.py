@@ -53,19 +53,21 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     tsla_df = tsla_df.loc[common_dates].copy()
     hedge_dfs = [hdf.loc[common_dates].copy() for hdf in hedge_dfs]
 
-    # 2. 计算 TSLA 信号 (与 strategy_ma.py 保持一致)
-    tsla_df["MA_S"] = tsla_df["Close"].rolling(window=ma_short).mean()
-    tsla_df["MA_L"] = tsla_df["Close"].rolling(window=ma_long).mean()
+    # 2. 计算 TSLA 信号（与 strategy_ma.run 中的定义保持一致）
+    # 均线命名固定为 MA5 / MA30，便于与单标的回测对齐阅读
+    tsla_df["MA5"] = tsla_df["Close"].rolling(window=ma_short).mean().round(3)
+    tsla_df["MA30"] = tsla_df["Close"].rolling(window=ma_long).mean().round(3)
 
-    # 金叉
-    cross_long = (tsla_df["MA_S"] >= tsla_df["MA_L"]) & (tsla_df["MA_S"].shift(1) <= tsla_df["MA_L"].shift(1))
-    # 死叉
-    sell_signal = (tsla_df["MA_S"] <= tsla_df["MA_L"]) & (tsla_df["MA_S"].shift(1) >= tsla_df["MA_L"].shift(1))
-    
-    price_ok = tsla_df["Close"] >= tsla_df["MA_S"] if use_price_filter else True
+    # 金叉：当前短 >= 长，前一根短 < 长
+    cross_long = (tsla_df["MA5"] >= tsla_df["MA30"]) & (tsla_df["MA5"].shift(1) < tsla_df["MA30"].shift(1))
+    # 死叉：当前短 < 长，前一根短 >= 长
+    sell_signal = (tsla_df["MA5"] < tsla_df["MA30"]) & (tsla_df["MA5"].shift(1) >= tsla_df["MA30"].shift(1))
+
+    # 入场过滤逻辑与 strategy_ma 完全一致，保持为逐行布尔序列，避免 use_price_filter=False 时标量 True 无法索引
+    price_ok = tsla_df["Close"] > tsla_df["MA5"] if use_price_filter else pd.Series(True, index=tsla_df.index)
     buy_signal = cross_long & price_ok
 
-    # 3. 逐 K 线模拟持仓状态（对标 strategy_ma.py，增加全资产价值追踪）
+    # 3. 逐 K 线模拟持仓状态（对标 strategy_ma.run，增加全资产价值追踪）
     tsla_pos_list = []
     # hedge_pos_matrix[hedge_idx][k_idx]
     hedge_pos_matrix = [[] for _ in range(len(hedge_dfs))]
@@ -81,10 +83,10 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     current_portfolio_value = initial_capital
     entry_prices = {} 
     
-    # 记录初始持仓（策略默认全仓持有对冲标的）
+    # 记录初始持仓（策略默认全仓持有对冲标的，成交价使用当根 K 线开盘价 Open）
     if hedge_names:
         for h_idx, h_name in enumerate(hedge_names):
-            h_price = hedge_dfs[h_idx]["Close"].iloc[0]
+            h_price = hedge_dfs[h_idx]["Open"].iloc[0]
             entry_prices[h_name] = h_price
             trades.append({
                 "trade_id": 0,
@@ -99,17 +101,25 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "cum_pnl": None,
                 "cum_pnl_pct": None
             })
-    entry_prices["TSLA"] = tsla_df["Close"].iloc[0]
+    entry_prices["TSLA"] = tsla_df["Open"].iloc[0]
 
     for i in range(len(tsla_df)):
         date = tsla_df.index[i]
-        price = tsla_df["Close"].iloc[i]
+        # 交易价格统一使用当根 K 线的开盘价（与 strategy_ma.run 一致）
+        price = tsla_df["Open"].iloc[i]
 
-        # 1. 信号检测：金叉/买入
-        if buy_signal.iloc[i]:
-            signal_wait = 0
-        elif signal_wait >= 0:
-            signal_wait += 1
+        # 1. 信号检测：金叉/买入（逻辑与 strategy_ma.run 保持一致）
+        if tsla_position == 0:
+            if buy_signal.iloc[i]:
+                if signal_wait < 0:
+                    signal_wait = 0  # 新信号出现，标记为第 0 根
+                else:
+                    signal_wait += 1  # 已有信号，在此基础上递增
+            elif signal_wait >= 0:
+                signal_wait += 1      # 后续 K 线递增计数
+        else:
+            # 持仓期间不保留旧的金叉等待计数，避免平仓后直接用旧信号再次入场
+            signal_wait = -1
 
         # 2. 信号检测：死叉/卖出 (仅持仓时有效)
         if sell_signal.iloc[i] and tsla_position == 1:
@@ -118,7 +128,8 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
             exit_signal_wait += 1
 
         # 3. 入场逻辑：从 Hedge 切换到 TSLA
-        if signal_wait >= entry_delay + 1 and tsla_position == 0 and price_ok.iloc[i]:
+        # entry_delay=0 时，signal_wait>=1 即信号后第 1 根 K 线买入（与 strategy_ma.run 一致）
+        if signal_wait >= entry_delay + 1 and tsla_position == 0:
             signal_wait = -1
             tsla_position = 1
             exit_signal_wait = -1
@@ -127,7 +138,7 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
             pnl_sum = 0
             if hedge_names:
                 for h_idx, h_name in enumerate(hedge_names):
-                    h_price = hedge_dfs[h_idx]["Close"].iloc[i]
+                    h_price = hedge_dfs[h_idx]["Open"].iloc[i]
                     h_entry_price = entry_prices[h_name]
                     h_weight = weights[h_idx]
                     
@@ -170,6 +181,13 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "cum_pnl_pct": None
             })
 
+            # 特殊处理：如果当前这根 K 线已经出现死叉，
+            # 则视为「前一日金叉、当日死叉」的情况：
+            # 仍在当日开盘买入 TSLA，但把 exit_signal_wait 置为 0，
+            # 这样在下一根 K 线（exit_delay=0 时）强制卖出。
+            if sell_signal.iloc[i]:
+                exit_signal_wait = 0
+
         # 4. 出场逻辑：从 TSLA 切换到 Hedge
         if exit_signal_wait >= exit_delay + 1 and tsla_position == 1:
             exit_signal_wait = -1
@@ -196,10 +214,10 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "cum_pnl_pct": None
             })
 
-            # --- 买入对冲组合 ---
+            # --- 买入对冲组合（成交价使用 Open） ---
             if hedge_names:
                 for h_idx, h_name in enumerate(hedge_names):
-                    h_price = hedge_dfs[h_idx]["Close"].iloc[i]
+                    h_price = hedge_dfs[h_idx]["Open"].iloc[i]
                     entry_prices[h_name] = h_price
                     trades.append({
                         "trade_id": trade_id,
