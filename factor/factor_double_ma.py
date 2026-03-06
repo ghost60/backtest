@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-MA 金叉死叉策略模块
+Double MA 因子计算模块
 
-逻辑简述：
-- 买入：短均线上穿长均线（金叉），且可选「收盘价 > 短均线」过滤，支持入场延迟 N 根 K
-- 卖出：短均线在长均线下方（死叉）
+功能：
+- 计算短均线上穿长均线（金叉），且可选「收盘价 > 短均线」过滤，支持入场延迟 N 根 K
+- 计算短均线在长均线下方（死叉）
 
-约定：
-- Position：当前 K 收盘后的持仓（0 或 1）
-- Strategy_Return：用「上一根 K 收盘后」的持仓 × 当日收益率
+用法示例
+--------
+>>> from backtest import data_loader
+>>> from backtest import factor_double_ma
+>>> df_spy = data_loader.load_data("data/SPY_25Y_yFinance.csv")
+>>> df_spy = factor_double_ma.calculate_double_ma_factors(df_spy, ma_short=5, ma_long=30, use_price_filter=True)
+>>> df_spy[["MA5", "MA30", "MA_Buy_Signal", "MA_Sell_Signal"]].tail()
 """
 
 import pandas as pd
-
-from engine.single_asset import run_single_asset
-
 
 def calculate_double_ma_factors(
     df: pd.DataFrame,
@@ -23,7 +24,7 @@ def calculate_double_ma_factors(
     use_price_filter: bool = True,
 ) -> pd.DataFrame:
     """
-    计算 MA 因子与信号，仅做“因子层”处理，不负责资金曲线与交易撮合。
+    计算 Double MA 因子与信号。
 
     结果中会新增列：
     - MA5 / MA30：短/长均线
@@ -46,4 +47,3 @@ def calculate_double_ma_factors(
     df["MA_Buy_Signal"] = buy_signal
     df["MA_Sell_Signal"] = sell_signal
     return df
-    
