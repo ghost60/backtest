@@ -33,12 +33,12 @@ def main():
     from backtest.backtest import run_backtest, run_hedge_backtest
 
     config = load_config(config_path)
-    hedge_cfg = get_hedge_config(config)
+    # hedge_cfg = get_hedge_config(config)
 
     # if hedge_cfg.get("enabled"):
-    run_hedge_backtest(config=config)
+    # run_hedge_backtest(config=config)
     # else:
-    # run_backtest(config=config)
+    run_backtest(config=config)
 
 
 if __name__ == "__main__":

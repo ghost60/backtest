@@ -13,7 +13,7 @@ backtest/
 │   └── default.yaml      # 默认配置（数据路径、回测区间、策略参数、输出目录）
 ├── config_loader.py      # 配置加载与路径解析
 ├── data_loader.py        # 数据加载与日期过滤
-├── strategy_ma.py        # MA 金叉死叉策略
+├── factor_double_ma.py        # MA 金叉死叉策略
 ├── metrics.py            # 净值曲线与绩效指标
 ├── charts.py             # 资金曲线与年度收益图
 ├── report.py             # 终端报告与 Markdown 输出

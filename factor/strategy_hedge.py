@@ -53,7 +53,7 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     tsla_df = tsla_df.loc[common_dates].copy()
     hedge_dfs = [hdf.loc[common_dates].copy() for hdf in hedge_dfs]
 
-    # 2. 计算 TSLA 信号（与 strategy_ma.run 中的定义保持一致）
+    # 2. 计算 TSLA 信号（与 factor_double_ma.run 中的定义保持一致）
     # 均线命名固定为 MA5 / MA30，便于与单标的回测对齐阅读
     tsla_df["MA5"] = tsla_df["Close"].rolling(window=ma_short).mean().round(3)
     tsla_df["MA30"] = tsla_df["Close"].rolling(window=ma_long).mean().round(3)
@@ -63,11 +63,11 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     # 死叉：当前短 < 长，前一根短 >= 长
     sell_signal = (tsla_df["MA5"] < tsla_df["MA30"]) & (tsla_df["MA5"].shift(1) >= tsla_df["MA30"].shift(1))
 
-    # 入场过滤逻辑与 strategy_ma 完全一致，保持为逐行布尔序列，避免 use_price_filter=False 时标量 True 无法索引
+    # 入场过滤逻辑与 factor_double_ma 完全一致，保持为逐行布尔序列，避免 use_price_filter=False 时标量 True 无法索引
     price_ok = tsla_df["Close"] > tsla_df["MA5"] if use_price_filter else pd.Series(True, index=tsla_df.index)
     buy_signal = cross_long & price_ok
 
-    # 3. 逐 K 线模拟持仓状态（对标 strategy_ma.run，增加全资产价值追踪）
+    # 3. 逐 K 线模拟持仓状态（对标 factor_double_ma.run，增加全资产价值追踪）
     tsla_pos_list = []
     # hedge_pos_matrix[hedge_idx][k_idx]
     hedge_pos_matrix = [[] for _ in range(len(hedge_dfs))]
@@ -105,10 +105,10 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
 
     for i in range(len(tsla_df)):
         date = tsla_df.index[i]
-        # 交易价格统一使用当根 K 线的开盘价（与 strategy_ma.run 一致）
+        # 交易价格统一使用当根 K 线的开盘价（与 factor_double_ma.run 一致）
         price = tsla_df["Open"].iloc[i]
 
-        # 1. 信号检测：金叉/买入（逻辑与 strategy_ma.run 保持一致）
+        # 1. 信号检测：金叉/买入（逻辑与 factor_double_ma.run 保持一致）
         if tsla_position == 0:
             if buy_signal.iloc[i]:
                 if signal_wait < 0:
@@ -128,7 +128,7 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
             exit_signal_wait += 1
 
         # 3. 入场逻辑：从 Hedge 切换到 TSLA
-        # entry_delay=0 时，signal_wait>=1 即信号后第 1 根 K 线买入（与 strategy_ma.run 一致）
+        # entry_delay=0 时，signal_wait>=1 即信号后第 1 根 K 线买入（与 factor_double_ma.run 一致）
         if signal_wait >= entry_delay + 1 and tsla_position == 0:
             signal_wait = -1
             tsla_position = 1
@@ -237,7 +237,7 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
         if exit_signal_wait > exit_delay + 1 and tsla_position == 1:
             exit_signal_wait = -1
 
-        # 记录持仓 (对标 strategy_ma，应用 position_ratio)
+        # 记录持仓 (对标 factor_double_ma，应用 position_ratio)
         tsla_pos_list.append(tsla_position * position_ratio)
         for h_idx in range(len(hedge_dfs)):
             # 如果 TSLA 没仓位，则按权重分给 hedge

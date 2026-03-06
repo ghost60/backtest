@@ -78,7 +78,7 @@ def load_config(config_path=None):
 
 
 def get_strategy_params(cfg):
-    """从配置中取出策略参数字典，供 strategy_ma.run(df, **params) 使用。"""
+    """从配置中取出策略参数字典"""
     s = cfg.get("strategy", {})
     return {
         "ma_short": s.get("ma_short", 5),

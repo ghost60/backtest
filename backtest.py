@@ -9,13 +9,15 @@
 
 import os
 
-from . import charts
-from . import data_loader
-from . import metrics
-from . import report
-from . import strategy_ma
-from . import visualization
-from .config_loader import get_capital_params, get_output_paths, get_strategy_params, load_config
+# 以“模块别名”的方式导入，便于后续 charts.apply_style / metrics.calculate_equity 等调用
+from report import charts
+from report import metrics
+from report import report
+import data_loader
+from factor import factor_double_ma
+from engine.single_asset import run_single_asset
+from report.quan_stats_report import generate_qs_report
+from config_loader import get_capital_params, get_output_paths, get_strategy_params, load_config
 
 
 def run_backtest(config=None, config_path=None):
@@ -54,11 +56,33 @@ def run_backtest(config=None, config_path=None):
     print(f"正在加载数据 ({start_date} 至 {end_date})...")
     df = data_loader.load_data(data_path, start_date=start_date, end_date=end_date)
 
-    # 2. 运行策略
+    # 2. 运行策略：先计算因子与信号，再交给通用撮合引擎
     print("正在运行策略...")
     print(f"策略参数: {strategy_params}")
     print(f"资金参数: {capital_params}")
-    df, trades = strategy_ma.run(df, **strategy_params, **capital_params)
+
+    # 2.1 因子层：计算 MA 指标与买卖信号（factor_double_ma 仅作为因子模块）
+    ma_short = strategy_params.get("ma_short", 5)
+    ma_long = strategy_params.get("ma_long", 30)
+    use_price_filter = strategy_params.get("use_price_filter", True)
+    df = factor_double_ma.calculate_double_ma_factors(
+        df,
+        ma_short=ma_short,
+        ma_long=ma_long,
+        use_price_filter=use_price_filter,
+    )
+
+    # 2.2 撮合层：通用单标的资金/交易引擎
+    df, trades = run_single_asset(
+        df,
+        buy_signal=df["MA_Buy_Signal"],
+        sell_signal=df["MA_Sell_Signal"],
+        entry_delay=strategy_params.get("entry_delay", 0),
+        exit_delay=strategy_params.get("exit_delay", 0),
+        initial_capital=capital_params.get("initial_capital", 100000),
+        position_ratio=capital_params.get("position_ratio", 1.0),
+        price_col="Open",
+    )
 
     # 3. 净值与指标（去掉均线导致的 NaN）
     print("正在计算指标...")
@@ -86,7 +110,7 @@ def run_backtest(config=None, config_path=None):
 
     # 7. QuantStats 报告
     qs_report_path = os.path.join(out_dir, "qs_report_tsla.html")
-    visualization.generate_qs_report(df_clean["Strategy_Return"], benchmark=df_clean["Market_Return"], 
+    generate_qs_report(df_clean["Strategy_Return"], benchmark=df_clean["Market_Return"], 
                                      output_path=qs_report_path, title="TSLA 回测分析报告")
 
     return {"metrics": result_metrics, "df_clean": df_clean, "config": config, "trades": trades}
@@ -96,8 +120,9 @@ def run_hedge_backtest(config=None, config_path=None):
     """
     执行对冲回测流程。
     """
-    from . import charts_hedge, strategy_hedge
-    from .config_loader import get_hedge_config
+    from report import charts_hedge
+    from factor import strategy_hedge
+    from config_loader import get_hedge_config
 
     if config is None:
         config = load_config(config_path)
@@ -169,7 +194,7 @@ def run_hedge_backtest(config=None, config_path=None):
 
     # 7. QuantStats 报告
     qs_report_path = os.path.join(out_dir, f"qs_report_tsla_hedge.html")
-    visualization.generate_qs_report(df_clean["Combined_Strategy_Return"], 
+    generate_qs_report(df_clean["Combined_Strategy_Return"], 
                                      benchmark=df_clean["TSLA_Market_Return"], 
                                      output_path=qs_report_path, title=f"TSLA 对冲回测报告 ({'_'.join(hedge_names)})")
 

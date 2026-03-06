@@ -2,7 +2,7 @@ import yfinance as yf
 import time
 
 # stock_list = ['AMGN', 'AZO', 'WMT', 'WM', 'GLD', 'TLT']
-stock_list = ['TSLA', 'AZO', 'ORLY', 'SPX']
+stock_list = ['TSLA', 'AZO', 'ORLY', 'SPY']
 
 period_ = "25Y"
 
