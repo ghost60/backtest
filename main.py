@@ -26,8 +26,8 @@ def main():
     # 如果你在 IDE 中直接运行 main.py (不带参数)，可以在这里手动指定默认配置
     # config_path = "config/hedge_azo.yaml"
     # config_path = "config/hedge_azo_orly.yaml"
-    # config_path = "config/adx_ma.yaml"
-    config_path = args.config
+    config_path = "config/adx_ma.yaml"
+    # config_path = args.config
     # -----------------------
 
     from backtest.config_loader import load_config, get_hedge_config

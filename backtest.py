@@ -32,20 +32,43 @@ SIGNAL_SELL_COL = "MA_Sell_Signal"
 
 
 def _print_signals(df, buy_col=SIGNAL_BUY_COL, sell_col=SIGNAL_SELL_COL):
-    """打印所有买入、卖出信号（日期与收盘价）。"""
+    """打印所有买入、卖出信号及产生信号时的各参数（价格与指标）。"""
     buys = df.index[df[buy_col]].tolist()
     sells = df.index[df[sell_col]].tolist()
+    # 用于打印的因子/价格列（排除布尔信号列）
+    skip = {buy_col, sell_col}
+    param_cols = [c for c in df.columns if c not in skip and hasattr(df[c].dtype, "kind") and df[c].dtype.kind in "fiu" and (c in ("Open", "High", "Low", "Close") or c.startswith("MA") or c in ("ADX", "+DI", "-DI"))]
     if not buys and not sells:
         print("  （无买卖信号）")
         return
     print("  ---------- 买入信号 ----------")
     for i, dt in enumerate(buys, 1):
-        close = df.loc[dt, "Close"] if "Close" in df.columns else ""
-        print(f"    {i}. {dt.strftime('%Y-%m-%d')}  Close={close}")
+        row = df.loc[dt]
+        vals = [f"{dt.strftime('%Y-%m-%d')}"]
+        for col in param_cols:
+            v = row[col] if col in row.index else None
+            if v is None or (isinstance(v, float) and v != v):
+                s = "-"
+            elif isinstance(v, float):
+                s = f"{v:.4g}" if abs(v) >= 1e-4 else f"{v:.2e}"
+            else:
+                s = str(v)
+            vals.append(f"{col}={s}")
+        print(f"    {i}. " + "  ".join(vals))
     print("  ---------- 卖出信号 ----------")
     for i, dt in enumerate(sells, 1):
-        close = df.loc[dt, "Close"] if "Close" in df.columns else ""
-        print(f"    {i}. {dt.strftime('%Y-%m-%d')}  Close={close}")
+        row = df.loc[dt]
+        vals = [f"{dt.strftime('%Y-%m-%d')}"]
+        for col in param_cols:
+            v = row[col] if col in row.index else None
+            if v is None or (isinstance(v, float) and v != v):
+                s = "-"
+            elif isinstance(v, float):
+                s = f"{v:.4g}" if abs(v) >= 1e-4 else f"{v:.2e}"
+            else:
+                s = str(v)
+            vals.append(f"{col}={s}")
+        print(f"    {i}. " + "  ".join(vals))
     print(f"  合计: 买入 {len(buys)} 次, 卖出 {len(sells)} 次")
 
 
