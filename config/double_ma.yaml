@@ -11,14 +11,21 @@ data:
   start_date: "2011-01-01"
   end_date: "2026-03-04"
 
-# ---------- 策略参数（MA 金叉死叉） ----------
+# ---------- 策略参数（执行层：与因子无关） ----------
+# 仅保留信号后的执行规则；因子类型与参数见下方 factor 段
 strategy:
-  name: "ma_cross"              # 策略标识，后续扩展多策略时可据此分支
-  ma_short: 5                   # 短均线周期
-  ma_long: 30                   # 长均线周期
-  use_price_filter: true       # 是否启用入场过滤：仅当 Close > 短均线 时允许开多
-  entry_delay: 0                # 金叉后延迟几根 K 线才允许入场，0 表示下一根即可
-  exit_delay: 0                 # 死叉后延迟几根 K 线才允许出场，0 表示下一根即可
+  name: "ma_cross"              # 策略标识
+  entry_delay: 0                # 信号出现后延迟几根 K 线入场，0 表示下一根即可
+  exit_delay: 0                 # 信号出现后延迟几根 K 线出场
+
+# ---------- 因子选择 ----------
+# 因子决定买卖信号；参数随 type 不同而不同（double_ma / single_ma）
+factor:
+  type: double_ma
+  params:
+    ma_short: 5
+    ma_long: 30
+    use_price_filter: true
 
 # ---------- 资金管理 ----------
 capital:
@@ -32,8 +39,3 @@ output:
   metrics_filename: "backtest_metrics_tsla.md"
   chart_figsize: [12, 10]       # 图表宽高（英寸）
 
-# ---------- 扩展预留（当前未使用） ----------
-# symbols: ["TSLA"]
-# hedge:
-#   enabled: false
-#   symbol: "AZO"

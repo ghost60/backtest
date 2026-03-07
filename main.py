@@ -3,7 +3,7 @@
 以包方式运行回测时的入口（需在项目根下执行）
 
 用法：python -m backtest.main
-      python -m backtest.main -c backtest/config/default.yaml
+      python -m backtest.main -c backtest/config/double_ma.yaml
 """
 
 import argparse
@@ -19,14 +19,15 @@ from backtest.backtest import run_backtest
 
 def main():
     parser = argparse.ArgumentParser(description="TSLA MA 金叉死叉策略回测")
-    parser.add_argument("-c", "--config", default=None, help="配置文件路径 (YAML)")
+    parser.add_argument("-c", "--config", default="config/double_ma.yaml", help="配置文件路径 (YAML)")
     args = parser.parse_args()
     
     # --- IDE 直接运行调试区 ---
     # 如果你在 IDE 中直接运行 main.py (不带参数)，可以在这里手动指定默认配置
     # config_path = "config/hedge_azo.yaml"
-    config_path = "config/hedge_azo_orly.yaml"
-    # config_path = args.config
+    # config_path = "config/hedge_azo_orly.yaml"
+    # config_path = "config/adx_ma.yaml"
+    config_path = args.config
     # -----------------------
 
     from backtest.config_loader import load_config, get_hedge_config
@@ -36,9 +37,9 @@ def main():
     # hedge_cfg = get_hedge_config(config)
 
     # if hedge_cfg.get("enabled"):
-    run_hedge_backtest(config=config)
+    # run_hedge_backtest(config=config)
     # else:
-    # run_backtest(config=config)
+    run_backtest(config=config)
 
 
 if __name__ == "__main__":

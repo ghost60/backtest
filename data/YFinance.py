@@ -2,7 +2,7 @@ import yfinance as yf
 import time
 
 # stock_list = ['AMGN', 'AZO', 'WMT', 'WM', 'GLD', 'TLT']
-stock_list = ['TSLA', 'AZO', 'ORLY', 'SPY']
+stock_list = ['TSLA', 'AZO', 'ORLY', '^GSPC'] #^GSPC is the S&P 500 index
 
 period_ = "25Y"
 

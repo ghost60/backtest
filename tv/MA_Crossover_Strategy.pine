@@ -1,0 +1,190 @@
+//@version=5
+strategy("MA Crossover Strategy (Final + MA30 Exit + Long Filters + ATR Stop + Correct BG)",
+     overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// === 回测时间设定 ===
+startYear  = input.int(2020, "Start Year")
+startMonth = input.int(1, "Start Month")
+startDay   = input.int(1, "Start Day")
+endYear    = input.int(2025, "End Year")
+endMonth   = input.int(12, "End Month")
+endDay     = input.int(31, "End Day")
+
+startTime = timestamp(startYear, startMonth, startDay, 00, 00)
+endTime   = timestamp(endYear, endMonth, endDay, 23, 59)
+inDateRange = (time >= startTime and time <= endTime)
+
+// === 交易方向 ===
+tradeDirection = input.string("Both", "Trade Direction", options=["Long", "Short", "Both"])
+
+// === 均线参数 ===
+src = input.source(close, title="Source")
+ma1Len = input.int(25, "1st MA Length")
+ma1Type = input.string("SMA", "1st MA Type", ["SMA","EMA"])
+ma2Len = input.int(50, "2nd MA Length")
+ma2Type = input.string("SMA", "2nd MA Type", ["SMA","EMA"])
+
+// === MA计算 ===
+getMA(maType, src, len) =>
+    maType == "SMA" ? ta.sma(src, len) : ta.ema(src, len)
+
+ma1 = getMA(ma1Type, src, ma1Len)
+ma2 = getMA(ma2Type, src, ma2Len)
+
+// === 长期均线过滤 ===
+useLongFilterLong = input.bool(true, "Enable Long MA Filter (Long)")
+useLongFilterShort = input.bool(true, "Enable Long MA Filter (Short)")
+longMaLen = input.int(200, "Long MA Length")
+longMa = ta.sma(src, longMaLen)
+
+// === MA30 Exit ===
+useMA30Exit = input.bool(true, "Use MA30 Exit")
+maExitLen = input.int(30, "Exit MA Length")
+maExit = ta.sma(close, maExitLen)
+
+// === 延迟开仓 ===
+entryDelay = input.int(0, "Entry Delay", minval=0)
+var bool longSignalActive = false
+var bool shortSignalActive = false
+var int longDelayCounter = 0
+var int shortDelayCounter = 0
+
+// === 金叉 / 死叉 ===
+crossLong = ta.crossover(ma1, ma2)
+crossShort = ta.crossunder(ma1, ma2)
+
+if crossLong
+    longSignalActive := true
+    longDelayCounter := 0
+    shortSignalActive := false
+
+if crossShort
+    shortSignalActive := true
+    shortDelayCounter := 0
+    longSignalActive := false
+
+if longSignalActive
+    longDelayCounter += 1
+if shortSignalActive
+    shortDelayCounter += 1
+
+longReady  = longSignalActive and longDelayCounter >= entryDelay and longDelayCounter <= entryDelay + 1
+shortReady = shortSignalActive and shortDelayCounter >= entryDelay and shortDelayCounter <= entryDelay + 1
+
+// === 长均线过滤 ===
+longAllowed  = (not useLongFilterLong)  or (close > longMa)
+shortAllowed = (not useLongFilterShort) or (close < longMa)
+
+// ======================================================
+// === 做多过滤：价格过滤 + RSI过滤 ======================
+// ======================================================
+usePriceFilter = input.bool(true, "Enable Price Filter for Long")
+priceSource = input.string("Cross MA Bar Close", "Price Source for Long Filter",
+     ["Close","HL2C3","Cross MA Bar Close"])
+
+priceHL2C3 = (high + low + close) / 3
+
+var float crossPrice = na
+if crossLong
+    crossPrice := close
+
+float priceForFilter = na
+if priceSource == "Close"
+    priceForFilter := close
+else if priceSource == "HL2C3"
+    priceForFilter := priceHL2C3
+else
+    priceForFilter := crossPrice
+
+pricePass = (not usePriceFilter) or (priceForFilter > ma1)
+
+// === RSI过滤 ===
+useRSIFilter = input.bool(true, "Enable RSI Filter for Long")
+rsiLen = input.int(14, "RSI Length")
+rsiTh  = input.float(50, "RSI Threshold")
+
+rsiValue = ta.rsi(close, rsiLen)
+rsiPass = (not useRSIFilter) or (rsiValue > rsiTh)
+
+// === 最终开仓 ===
+doLong = (tradeDirection != "Short") and longReady  and longAllowed  and pricePass and rsiPass and inDateRange
+doShort = (tradeDirection != "Long") and shortReady and shortAllowed and inDateRange
+
+// ======================================================
+// === ATR 止损（Long Only, 次根执行） ==================
+// ======================================================
+useATRStop = input.bool(false, "Enable ATR Stop Loss for Long")
+atrLen  = input.int(14, "ATR Length")
+atrMult = input.float(1.5, "ATR Multiplier")
+
+atrValue = ta.atr(atrLen)
+
+var float atrAtEntry = na
+var bool longStopFlag = false
+
+// === ATR 止损执行（次根执行） ===
+if longStopFlag and strategy.position_size > 0
+    strategy.close("Long")
+    longStopFlag := false
+    atrAtEntry := na
+
+// === 不含ATR的平仓逻辑 ===
+closeLong  = (tradeDirection != "Short") and (crossShort or (useMA30Exit and close < maExit)) and inDateRange
+closeShort = (tradeDirection != "Long") and crossLong and inDateRange
+
+// ======================================================
+// === ★★ 图形持仓逻辑（背景色控制，不提前） ============
+// ======================================================
+var bool bgLong = false
+var bool bgShort = false
+
+// === 开仓（下一根执行，但背景不提前） ===
+if doLong
+    strategy.entry("Long", strategy.long)
+    atrAtEntry := atrValue
+
+if doShort
+    strategy.entry("Short", strategy.short)
+
+// === 平仓 ===
+if closeLong
+    strategy.close("Long")
+if closeShort
+    strategy.close("Short")
+
+// === ATR 止损触发（收盘触发 → 次根执行） ===
+if useATRStop and strategy.position_size > 0 and not na(atrAtEntry)
+    entryPrice = strategy.position_avg_price
+    longStopLine = entryPrice - atrAtEntry * atrMult
+    if close < longStopLine
+        longStopFlag := true
+
+// ======================================================
+// === 背景色逻辑 —— 完全符合你的3条要求 ===============
+// ======================================================
+
+// 1. 开仓后的“下一根 K”才开启背景
+if strategy.position_size > 0 and strategy.position_size[1] == 0
+    bgLong := true
+if strategy.position_size < 0 and strategy.position_size[1] == 0
+    bgShort := true
+
+// 2. 死叉平仓当根背景仍继续显示，下一根关闭
+if strategy.position_size == 0 and strategy.position_size[1] > 0
+    bgLong := false
+if strategy.position_size == 0 and strategy.position_size[1] < 0
+    bgShort := false
+
+// 显示背景
+showBG = input.bool(true, "Show Background Color")
+bgcolor(showBG and bgLong  ? color.new(color.green, 85) : na)
+bgcolor(showBG and bgShort ? color.new(color.red, 85)   : na)
+
+// === 图形 ===
+plot(ma1, color=color.blue, linewidth=2)
+plot(ma2, color=color.green, linewidth=2)
+plot(longMa, color=color.gray)
+plot(maExit, color=color.orange)
+
+plotshape(crossLong,  "Cross Long",  location=location.belowbar, color=color.green, style=shape.triangleup,   size=size.small)
+plotshape(crossShort, "Cross Short", location=location.abovebar, color=color.red,   style=shape.triangledown, size=size.small)

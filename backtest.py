@@ -8,6 +8,7 @@
 """
 
 import os
+from pathlib import Path
 
 # 包内相对导入，便于作为 backtest 包运行时正确解析（如 python -m backtest.tools.ma_param_search）
 from .report import charts
@@ -15,9 +16,37 @@ from .report import metrics
 from .report import report
 from . import data_loader
 from .factor import factor_double_ma
+from .factor import factor_adx_ma
 from .engine.single_asset import run_single_asset
 from .report.quan_stats_report import generate_qs_report
-from .config_loader import get_capital_params, get_output_paths, get_strategy_params, load_config
+from .config_loader import get_capital_params, get_output_paths, get_strategy_params, get_factor_config, get_hedge_config, load_config, PROJECT_ROOT
+
+# 因子注册表：type -> (module, 计算函数名)，便于按配置调度
+FACTOR_REGISTRY = {
+    "double_ma": (factor_double_ma, "calculate_double_ma_factors"),
+    "adx_ma": (factor_adx_ma, "calculate_adx_ma_factors"),
+}
+# 各因子输出的买卖信号列名（当前单/双均线一致，后续可扩展为从因子返回）
+SIGNAL_BUY_COL = "MA_Buy_Signal"
+SIGNAL_SELL_COL = "MA_Sell_Signal"
+
+
+def _print_signals(df, buy_col=SIGNAL_BUY_COL, sell_col=SIGNAL_SELL_COL):
+    """打印所有买入、卖出信号（日期与收盘价）。"""
+    buys = df.index[df[buy_col]].tolist()
+    sells = df.index[df[sell_col]].tolist()
+    if not buys and not sells:
+        print("  （无买卖信号）")
+        return
+    print("  ---------- 买入信号 ----------")
+    for i, dt in enumerate(buys, 1):
+        close = df.loc[dt, "Close"] if "Close" in df.columns else ""
+        print(f"    {i}. {dt.strftime('%Y-%m-%d')}  Close={close}")
+    print("  ---------- 卖出信号 ----------")
+    for i, dt in enumerate(sells, 1):
+        close = df.loc[dt, "Close"] if "Close" in df.columns else ""
+        print(f"    {i}. {dt.strftime('%Y-%m-%d')}  Close={close}")
+    print(f"  合计: 买入 {len(buys)} 次, 卖出 {len(sells)} 次")
 
 
 def run_backtest(config=None, config_path=None):
@@ -29,7 +58,7 @@ def run_backtest(config=None, config_path=None):
     config : dict, optional
         已加载的配置；若提供则不再读 config_path。
     config_path : str, optional
-        YAML 配置文件路径；不提供则用 config/default.yaml。
+        YAML 配置文件路径；不提供则用 config/double_ma.yaml。
 
     返回
     ----
@@ -58,25 +87,38 @@ def run_backtest(config=None, config_path=None):
 
     # 2. 运行策略：先计算因子与信号，再交给通用撮合引擎
     print("正在运行策略...")
-    print(f"策略参数: {strategy_params}")
+    factor_cfg = get_factor_config(config)
+    factor_type = factor_cfg["type"]
+    factor_params = dict(factor_cfg["params"])
+    if factor_type not in FACTOR_REGISTRY:
+        raise ValueError(f"不支持的因子类型: {factor_type}，可选: {list(FACTOR_REGISTRY.keys())}")
+    # adx_ma：若启用其他资产过滤长均线，加载 other_asset 数据并传入因子
+    if factor_type == "adx_ma" and factor_params.get("use_other_asset"):
+        other_path = factor_params.pop("other_asset_path", None)
+        if other_path:
+            p = Path(other_path)
+            if not p.is_absolute():
+                p = Path(PROJECT_ROOT) / p
+            other_asset_df = data_loader.load_data(str(p), start_date=start_date, end_date=end_date)
+            factor_params["other_asset_df"] = other_asset_df
+            print(f"已加载长均线过滤标的: {other_path}")
+        else:
+            factor_params["other_asset_df"] = None
+    else:
+        factor_params.pop("other_asset_path", None)
+    module, fn_name = FACTOR_REGISTRY[factor_type]
+    factor_fn = getattr(module, fn_name)
+    df = factor_fn(df, **factor_params)
+    print(f"策略参数: 因子={factor_type}, {factor_params}")
     print(f"资金参数: {capital_params}")
+    print("买卖信号:")
+    _print_signals(df)
 
-    # 2.1 因子层：计算 MA 指标与买卖信号（factor_double_ma 仅作为因子模块）
-    ma_short = strategy_params.get("ma_short", 5)
-    ma_long = strategy_params.get("ma_long", 30)
-    use_price_filter = strategy_params.get("use_price_filter", True)
-    df = factor_double_ma.calculate_double_ma_factors(
-        df,
-        ma_short=ma_short,
-        ma_long=ma_long,
-        use_price_filter=use_price_filter,
-    )
-
-    # 2.2 撮合层：通用单标的资金/交易引擎
+    # 2.2 撮合层
     df, trades = run_single_asset(
         df,
-        buy_signal=df["MA_Buy_Signal"],
-        sell_signal=df["MA_Sell_Signal"],
+        buy_signal=df[SIGNAL_BUY_COL],
+        sell_signal=df[SIGNAL_SELL_COL],
         entry_delay=strategy_params.get("entry_delay", 0),
         exit_delay=strategy_params.get("exit_delay", 0),
         initial_capital=capital_params.get("initial_capital", 100000),
@@ -95,13 +137,14 @@ def run_backtest(config=None, config_path=None):
 
     # 5. Markdown 报告
     out_dir = paths["output_dir"]
+    os.makedirs(out_dir, exist_ok=True)
 
     # 6. 输出并保存交易清单
     # report.print_trades(trades)
-    trades_csv_path = os.path.join(out_dir, "trades.csv")
+    trades_csv_path = os.path.join(out_dir, paths["trades_filename"])
     report.save_trades_csv(trades, trades_csv_path)
     md_path = os.path.join(out_dir, paths["metrics_filename"])
-    report.write_markdown(md_path, start_date, end_date, strategy_params, result_metrics, capital_params, trades)
+    report.write_markdown(md_path, start_date, end_date, strategy_params, result_metrics, capital_params, trades, factor_config=factor_cfg)
 
     # 6. 图表
     charts.apply_style(out_cfg.get("font_sans_serif"))
@@ -109,9 +152,9 @@ def run_backtest(config=None, config_path=None):
     charts.generate_charts(df_clean, chart_path, figsize=tuple(out_cfg.get("chart_figsize", [12, 10])))
 
     # 7. QuantStats 报告
-    qs_report_path = os.path.join(out_dir, "qs_report_tsla.html")
-    generate_qs_report(df_clean["Strategy_Return"], benchmark=df_clean["Market_Return"], 
-                                     output_path=qs_report_path, title="TSLA 回测分析报告")
+    qs_report_path = os.path.join(out_dir, paths["qs_report_filename"])
+    generate_qs_report(df_clean["Strategy_Return"], benchmark=df_clean["Market_Return"],
+                                     output_path=qs_report_path, title=f"回测分析报告 ({paths['config_name']})")
 
     return {"metrics": result_metrics, "df_clean": df_clean, "config": config, "trades": trades}
 
@@ -122,7 +165,6 @@ def run_hedge_backtest(config=None, config_path=None):
     """
     from .report import charts_hedge
     from .factor import factor_double_ma_hedge
-    from .config_loader import get_hedge_config
 
     if config is None:
         config = load_config(config_path)
@@ -138,6 +180,7 @@ def run_hedge_backtest(config=None, config_path=None):
     paths = get_output_paths(config)
     out_cfg = config.get("output", {})
     hedge_cfg = get_hedge_config(config)
+    factor_cfg = get_factor_config(config)
 
     if not hedge_cfg["enabled"]:
         print("警告: 配置文件中未启用对冲 (hedge.enabled=false)，正在退回标准回测...")
@@ -157,10 +200,13 @@ def run_hedge_backtest(config=None, config_path=None):
         hedge_names.append(s["name"])
         weights.append(s["weight"])
 
-    # 2. 运行对冲策略
+    # 2. 运行对冲策略（因子参数来自 factor 配置，执行参数来自 strategy）
     print("正在运行对冲策略...")
-    df_combined, trades = factor_double_ma_hedge.run(tsla_df, hedge_dfs, weights, 
-                                            **strategy_params, **capital_params,
+    df_combined, trades = factor_double_ma_hedge.run(tsla_df, hedge_dfs, weights,
+                                            **factor_cfg["params"],
+                                            entry_delay=strategy_params.get("entry_delay", 0),
+                                            exit_delay=strategy_params.get("exit_delay", 0),
+                                            **capital_params,
                                             hedge_names=hedge_names)
 
     # 3. 计算指标
@@ -174,17 +220,16 @@ def run_hedge_backtest(config=None, config_path=None):
 
     # 5. Markdown 报告
     out_dir = paths["output_dir"]
-    
+    os.makedirs(out_dir, exist_ok=True)
+
     # 6. 交易清单
     # report.print_trades(trades)
-    # 动态生成文件名，如 trades_tsla_azo.csv 或 trades_tsla_azo_orly.csv
-    hedge_suffix = "_".join([n.lower() for n in hedge_names])
-    trades_csv_path = os.path.join(out_dir, f"trades_tsla_{hedge_suffix}.csv")
+    trades_csv_path = os.path.join(out_dir, paths["trades_filename"])
     report.save_trades_csv(trades, trades_csv_path)
 
     md_path = os.path.join(out_dir, paths["metrics_filename"])
     report.write_markdown_hedge(md_path, start_date, end_date, strategy_params, result_metrics, hedge_names, 
-                               capital_params=capital_params, trades=trades)
+                               capital_params=capital_params, trades=trades, factor_config=factor_cfg)
 
     # 6. 图表
     charts.apply_style(out_cfg.get("font_sans_serif"))
@@ -193,9 +238,9 @@ def run_hedge_backtest(config=None, config_path=None):
                                        figsize=tuple(out_cfg.get("chart_figsize", [14, 12])))
 
     # 7. QuantStats 报告
-    qs_report_path = os.path.join(out_dir, f"qs_report_tsla_hedge.html")
-    generate_qs_report(df_clean["Combined_Strategy_Return"], 
-                                     benchmark=df_clean["TSLA_Market_Return"], 
-                                     output_path=qs_report_path, title=f"TSLA 对冲回测报告 ({'_'.join(hedge_names)})")
+    qs_report_path = os.path.join(out_dir, paths["qs_report_filename"])
+    generate_qs_report(df_clean["Combined_Strategy_Return"],
+                                     benchmark=df_clean["TSLA_Market_Return"],
+                                     output_path=qs_report_path, title=f"对冲回测报告 ({paths['config_name']})")
 
     return {"metrics": result_metrics, "df_clean": df_clean, "config": config}

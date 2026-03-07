@@ -1,0 +1,39 @@
+# ============================================================
+# ADX + Moving AVG 策略（与 TradingView ADX_Moving_AVG_Strategy.pine 一致）
+# 使用方式: python -m backtest -c config/adx_ma.yaml
+# ============================================================
+# Pine 对应：
+#   入场：ADX 上穿 adx_threshold 且 (本标的/其他资产) Close > 长均线，且 SMA14 > SMA14[14]
+#   出场：ADX 下穿 adx_threshold 或 (本标的/其他资产) Close < 长均线
+#   use_other_asset=true 时，长均线及过滤用 other_asset_path 标的（如 ^GSPC）
+# ============================================================
+
+data:
+  path: "data/TSLA_25Y_yFinance.csv"
+  start_date: "2020-01-01"
+  end_date: "2026-01-01"
+
+strategy:
+  name: "adx_ma"
+  entry_delay: 0
+  exit_delay: 0
+
+factor:
+  type: adx_ma
+  params:
+    adx_threshold: 26
+    moving_avg_day: 110
+    adx_period: 14
+    use_sma14_filter: true
+    use_other_asset: true
+    other_asset_path: "data/^GSPC_25Y_yFinance.csv"
+
+capital:
+  initial: 1000000
+  position_ratio: 1.0
+
+output:
+  dir: "result"
+  chart_filename: "backtest_results_adx_ma.png"
+  metrics_filename: "backtest_metrics_adx_ma.md"
+  chart_figsize: [12, 10]

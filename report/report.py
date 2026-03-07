@@ -39,7 +39,7 @@ def print_metrics(metrics, title="策略表现报告 (STRATEGY PERFORMANCE REPOR
 
 
 def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
-                   capital_params=None, trades=None, title_suffix=""):
+                   capital_params=None, trades=None, factor_config=None, title_suffix=""):
     """
     将回测周期、策略参数、核心指标写入 Markdown 文件。
 
@@ -50,13 +50,15 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
     start_date, end_date : str
         回测起止日期。
     strategy_params : dict
-        如 ma_short, ma_long, use_price_filter, entry_delay。
+        执行层参数：name, entry_delay, exit_delay。
     metrics : dict
         指标名 -> 数值。
     capital_params : dict, optional
         资金参数，如 initial, position_ratio。
     trades : list, optional
         交易清单，用于计算总盈亏。
+    factor_config : dict, optional
+        因子配置 {"type", "params"}，用于在报告中展示因子与参数。
     title_suffix : str
         报告标题后缀，可选。
     """
@@ -64,19 +66,32 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    ma_s = strategy_params.get("ma_short", 5)
-    ma_l = strategy_params.get("ma_long", 30)
     initial = capital_params.get("initial", 100000) if capital_params else 100000
     pos_ratio = capital_params.get("position_ratio", 1.0) if capital_params else 1.0
-
-    # 计算总盈亏
+    entry_delay = strategy_params.get("entry_delay", 0)
+    exit_delay = strategy_params.get("exit_delay", 0)
+    param_rows = [
+        f"| 入场延迟 | {entry_delay} 根K线 |",
+        f"| 出场延迟 | {exit_delay} 根K线 |",
+    ]
+    if factor_config:
+        ftype = factor_config.get("type", "double_ma")
+        fparams = factor_config.get("params", {})
+        param_rows.append(f"| 因子类型 | {ftype} |")
+        for k, v in sorted(fparams.items()):
+            param_rows.append(f"| 因子.{k} | {v} |")
+    else:
+        ma_s = strategy_params.get("ma_short", 5)
+        ma_l = strategy_params.get("ma_long", 30)
+        param_rows.append(f"| 价格过滤 (Close>MA{ma_s}) | {'启用' if strategy_params.get('use_price_filter', True) else '禁用'} |")
+        param_rows.append(f"| 买入信号 | MA{ma_s}金叉MA{ma_l} 且 Close>MA{ma_s} |")
+        param_rows.append("| 卖出信号 | MA死叉 |")
     total_pnl = 0
     total_return_pct = 0
     if trades:
-        # 从最后一笔交易获取累计盈亏
         last_trade = trades[-1]
-        total_pnl = last_trade.get('cum_pnl', 0) or 0
-        total_return_pct = last_trade.get('cum_pnl_pct', 0) or 0
+        total_pnl = last_trade.get("cum_pnl", 0) or 0
+        total_return_pct = last_trade.get("cum_pnl_pct", 0) or 0
 
     lines = [
         "# 策略回测表现报告" + (" " + title_suffix if title_suffix else ""),
@@ -94,11 +109,9 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         "",
         "| 参数 | 值 |",
         "| :--- | :--- |",
-        f"| 价格过滤 (Close>MA{ma_s}) | {'启用' if strategy_params.get('use_price_filter', True) else '禁用'} |",
-        f"| 入场延迟 | {strategy_params.get('entry_delay', 0)} 根K线 |",
-        f"| 出场延迟 | {strategy_params.get('exit_delay', 0)} 根K线 |",
-        f"| 买入信号 | MA{ma_s}金叉MA{ma_l} 且 Close>MA{ma_s} |",
-        "| 卖出信号 | MA死叉 |",
+    ]
+    lines += param_rows
+    lines += [
         "",
         "### 盈亏汇总（基于实际成交）",
         "",
@@ -127,13 +140,30 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
 
 
 def write_markdown_hedge(output_path, start_date, end_date, strategy_params, metrics,
-                          hedge_names, capital_params=None, trades=None, title_suffix=""):
+                          hedge_names, capital_params=None, trades=None, factor_config=None, title_suffix=""):
     """
     将对冲策略的回测表现写入 Markdown 文件。
     """
     out_dir = os.path.dirname(output_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+
+    param_rows = [
+        f"| 入场延迟 | {strategy_params.get('entry_delay', 0)} 根K线 |",
+        f"| 出场延迟 | {strategy_params.get('exit_delay', 0)} 根K线 |",
+    ]
+    if factor_config:
+        ftype = factor_config.get("type", "double_ma")
+        fparams = factor_config.get("params", {})
+        param_rows.append(f"| 因子类型 | {ftype} |")
+        for k, v in sorted(fparams.items()):
+            param_rows.append(f"| 因子.{k} | {v} |")
+    else:
+        param_rows.extend([
+            f"| 价格过滤 | {'启用' if strategy_params.get('use_price_filter', True) else '禁用'} |",
+            f"| 短均线周期 | {strategy_params.get('ma_short', 5)} |",
+            f"| 长均线周期 | {strategy_params.get('ma_long', 30)} |",
+        ])
 
     lines = [
         "# 对冲策略回测表现报告" + (" " + title_suffix if title_suffix else ""),
@@ -151,10 +181,9 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
         "",
         "| 参数 | 值 |",
         "| :--- | :--- |",
-        f"| 价格过滤 | {'启用' if strategy_params.get('use_price_filter', True) else '禁用'} |",
-        f"| 入场延迟 | {strategy_params.get('entry_delay', 0)} 根K线 |",
-        f"| 短均线周期 | {strategy_params.get('ma_short', 5)} |",
-        f"| 长均线周期 | {strategy_params.get('ma_long', 30)} |",
+    ]
+    lines += param_rows
+    lines += [
         "",
         "### 盈亏汇总",
         "",
@@ -219,6 +248,7 @@ def save_trades_csv(trades, output_path):
     if not trades:
         return
 
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     trades_df = pd.DataFrame(trades)
     trades_df.to_csv(output_path, index=False, encoding='utf-8-sig')
     print(f"交易清单已保存至: {output_path}")

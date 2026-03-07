@@ -9,10 +9,10 @@
 - 可选生成专用「策略查看器图」：价格 + 信号 + MA 指标 + 权益曲线 + 回撤 + 持仓
 
 用法示例（在项目根的上一层目录运行）：
-    python -m backtest.strategy_viewer -c backtest/config/default.yaml --viewer-chart
+    python -m backtest.strategy_viewer -c backtest/config/double_ma.yaml --viewer-chart
 
 也可以在 backtest 目录内直接运行脚本：
-    python strategy_viewer.py -c config/default.yaml --viewer-chart
+    python strategy_viewer.py -c config/double_ma.yaml --viewer-chart
 """
 
 import argparse
@@ -141,8 +141,8 @@ def main():
     parser.add_argument(
         "-c",
         "--config",
-        default="config/default.yaml",
-        help="配置文件路径（YAML），默认 config/default.yaml",
+        default="config/double_ma.yaml",
+        help="配置文件路径（YAML），默认 config/double_ma.yaml",
     )
 
     args = parser.parse_args()

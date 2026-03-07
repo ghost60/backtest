@@ -10,7 +10,7 @@ MA 双均线策略参数搜索脚本
     python ma_param_search.py
 
 逻辑：
-- 读取基础配置（默认使用 config/default.yaml）
+- 读取基础配置（默认使用 config/double_ma.yaml）
 - 在给定的 (ma_short, ma_long) 网格上循环：
     - 注入到 cfg["strategy"] 里
     - 调用 run_backtest(config=cfg)
@@ -58,7 +58,7 @@ TOP_BIN_FRACTION = 0.10
 
 def main():
     # 1. 读取基础配置（可按需改成其他配置文件）
-    base_cfg = load_config("config/default.yaml")
+    base_cfg = load_config("config/double_ma.yaml")
 
     all_results = []
 

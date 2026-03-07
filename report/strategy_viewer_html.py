@@ -10,10 +10,10 @@
   - 下半部分：在当前时间窗口内动态刷新的成交清单与区间统计（胜率、盈亏等）
 
 用法示例（在项目根的上一层目录运行）：
-    python -m backtest.strategy_viewer_html -c backtest/config/default.yaml
+    python -m backtest.strategy_viewer_html -c backtest/config/double_ma.yaml
 
 也可以在 backtest 目录内直接运行脚本：
-    python strategy_viewer_html.py -c config/default.yaml
+    python strategy_viewer_html.py -c config/double_ma.yaml
 """
 
 import argparse
@@ -309,8 +309,8 @@ def main():
     parser.add_argument(
         "-c",
         "--config",
-        default="config/default.yaml",
-        help="配置文件路径（YAML），默认 config/default.yaml",
+        default="config/double_ma.yaml",
+        help="配置文件路径（YAML），默认 config/double_ma.yaml",
     )
 
     args = parser.parse_args()

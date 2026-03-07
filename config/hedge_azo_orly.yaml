@@ -9,11 +9,15 @@ data:
 
 strategy:
   name: "ma_cross_hedge_triple"
-  ma_short: 5
-  ma_long: 30
-  use_price_filter: true
   entry_delay: 0
   exit_delay: 0
+
+factor:
+  type: double_ma
+  params:
+    ma_short: 5
+    ma_long: 30
+    use_price_filter: true
 
 # ---------- 资金管理 ----------
 capital:
