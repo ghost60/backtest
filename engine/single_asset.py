@@ -73,6 +73,9 @@ def run_single_asset(
     position = 0
     positions: List[int] = []
     trades: List[Dict] = []
+    daily_cash: List[float] = []
+    daily_shares: List[int] = []
+    daily_borrowed: List[float] = []
 
     signal_wait = -1       # 金叉后等待的 K 数：-1=无信号，0=信号当根，1=信号后第1根...
     exit_signal_wait = -1  # 死叉后等待的 K 数
@@ -186,6 +189,9 @@ def run_single_asset(
             exit_signal_wait = -1
 
         positions.append(position)
+        daily_cash.append(cash)
+        daily_shares.append(shares)
+        daily_borrowed.append(borrowed)
 
     # 6. 累计盈亏回填
     cum_pnl = 0.0
@@ -195,9 +201,15 @@ def run_single_asset(
             t["cum_pnl"] = round(cum_pnl, 2)
             t["cum_pnl_pct"] = round(cum_pnl / float(initial_capital) * 100, 2) if initial_capital else 0.0
 
-    # 7. 收益率与策略收益
+    # 7. 收益率与总资产
     df["Position"] = positions
+    df["Portfolio_Cash"] = daily_cash
+    df["Portfolio_Shares"] = daily_shares
+    df["Portfolio_Borrowed"] = daily_borrowed
+    df["Total_Value"] = df["Portfolio_Cash"] + df["Portfolio_Shares"] * df["Close"] - df["Portfolio_Borrowed"]
+    
     df["Market_Return"] = df["Close"].pct_change()
-    df["Strategy_Return"] = df["Position"].shift(1) * df["Market_Return"]
+    # 真实百分比收益
+    df["Strategy_Return"] = df["Total_Value"].pct_change().fillna(0.0)
 
     return df, trades

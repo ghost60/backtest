@@ -9,6 +9,7 @@
 
 import os
 from pathlib import Path
+import pandas as pd
 
 # 包内相对导入，便于作为 backtest 包运行时正确解析（如 python -m backtest.tools.ma_param_search）
 from .report import charts
@@ -112,48 +113,110 @@ def run_backtest(config=None, config_path=None):
     print(f"正在加载数据 ({start_date} 至 {end_date})...")
     df = data_loader.load_data(data_path, start_date=start_date, end_date=end_date)
 
-    # 2. 运行策略：先计算因子与信号，再交给通用撮合引擎
-    print("正在运行策略...")
-    factor_cfg = get_factor_config(config)
-    factor_type = factor_cfg["type"]
-    factor_params = dict(factor_cfg["params"])
-    if factor_type not in FACTOR_REGISTRY:
-        raise ValueError(f"不支持的因子类型: {factor_type}，可选: {list(FACTOR_REGISTRY.keys())}")
-    # adx_ma：若启用其他资产过滤长均线，加载 other_asset 数据并传入因子
-    if factor_type == "adx_ma" and factor_params.get("use_other_asset"):
-        other_path = factor_params.pop("other_asset_path", None)
-        if other_path:
-            p = Path(other_path)
-            if not p.is_absolute():
-                p = Path(PROJECT_ROOT) / p
-            other_asset_df = data_loader.load_data(str(p), start_date=start_date, end_date=end_date)
-            factor_params["other_asset_df"] = other_asset_df
-            print(f"已加载长均线过滤标的: {other_path}")
+    # 2. 运行策略：支持多因子遍历并合并资金曲线
+    print("正在运行策略 (支持多因子)...")
+    parsed_factors = get_factor_config(config)
+    
+    all_trades = []
+    # 存储每个因子跑出来的 df（主要为了最后把各因子的 Total_Value 相加）
+    factor_results = []
+    
+    # 组合级别的初始资金（总计）
+    total_initial_capital = capital_params.get("initial_capital", 100000)
+    
+    # 分别运行每个因子
+    for i, factor_cfg in enumerate(parsed_factors):
+        factor_type = factor_cfg["type"]
+        factor_params = dict(factor_cfg["params"])
+        alloc_ratio = factor_cfg.get("capital_alloc", 1.0)
+        
+        # 该因子分配到的独立初始资金
+        allocated_capital = total_initial_capital * alloc_ratio
+        
+        if factor_type not in FACTOR_REGISTRY:
+            raise ValueError(f"不支持的因子类型: {factor_type}，可选: {list(FACTOR_REGISTRY.keys())}")
+            
+        # adx_ma 特殊处理 (其他资产长均线)
+        if factor_type == "adx_ma" and factor_params.get("use_other_asset"):
+            other_path = factor_params.pop("other_asset_path", None)
+            if other_path:
+                p = Path(other_path)
+                if not p.is_absolute():
+                    p = Path(PROJECT_ROOT) / p
+                other_asset_df = data_loader.load_data(str(p), start_date=start_date, end_date=end_date)
+                factor_params["other_asset_df"] = other_asset_df
+                print(f"[{factor_type}] 已加载长均线过滤标的: {other_path}")
+            else:
+                factor_params["other_asset_df"] = None
         else:
-            factor_params["other_asset_df"] = None
-    else:
-        factor_params.pop("other_asset_path", None)
-    module, fn_name = FACTOR_REGISTRY[factor_type]
-    factor_fn = getattr(module, fn_name)
-    df = factor_fn(df, **factor_params)
-    print(f"策略参数: 因子={factor_type}, {factor_params}")
-    print(f"资金参数: {capital_params}")
-    print("买卖信号:")
-    _print_signals(df)
+            factor_params.pop("other_asset_path", None)
+            
+        module, fn_name = FACTOR_REGISTRY[factor_type]
+        factor_fn = getattr(module, fn_name)
+        
+        print(f"\n--- 开始运行因子 {i+1}/{len(parsed_factors)}: {factor_type} ---")
+        print(f"参数: {factor_params}")
+        print(f"分配资金: {allocated_capital} (占比 {alloc_ratio*100}%)")
+        
+        # 计算因子信号
+        factor_df = factor_fn(df.copy(), **factor_params)
+        
+        # 打印部分不强制，这里只打印单因子的
+        if len(parsed_factors) == 1:
+            print("买卖信号:")
+            _print_signals(factor_df)
 
-    # 2.2 撮合层
-    df, trades = run_single_asset(
-        df,
-        buy_signal=df[SIGNAL_BUY_COL],
-        sell_signal=df[SIGNAL_SELL_COL],
-        entry_delay=strategy_params.get("entry_delay", 0),
-        exit_delay=strategy_params.get("exit_delay", 0),
-        initial_capital=capital_params.get("initial_capital", 100000),
-        position_ratio=capital_params.get("position_ratio", 1.0),
-        max_leverage=capital_params.get("max_leverage", 1.0),
-        price_col="Open",
-    )
+        # 2.2 单因子撮合层
+        factor_df, trades = run_single_asset(
+            factor_df,
+            buy_signal=factor_df[SIGNAL_BUY_COL],
+            sell_signal=factor_df[SIGNAL_SELL_COL],
+            entry_delay=strategy_params.get("entry_delay", 0),
+            exit_delay=strategy_params.get("exit_delay", 0),
+            initial_capital=allocated_capital,
+            position_ratio=capital_params.get("position_ratio", 1.0),
+            max_leverage=capital_params.get("max_leverage", 1.0),
+            price_col="Open",
+        )
+        
+        # 标记 trades 来自此因子
+        for t in trades:
+            t["factor_name"] = factor_type
+        all_trades.extend(trades)
+        
+        factor_results.append(factor_df)
 
+    # 按时间戳排序所有合并后的交易记录
+    all_trades.sort(key=lambda x: x["date"])
+    
+    # ----- 资金聚合 (Portfolio Aggregation) -----
+    # 以第一个结果为基准，复制一份汇总的 df
+    df_combined = factor_results[0].copy()
+    
+    # 清空可能属于单一因子的列，仅保留主基准所需
+    cols_to_keep = ["Open", "High", "Low", "Close", "Volume", "Market_Return"]
+    for c in list(df_combined.columns):
+        if c not in cols_to_keep:
+            del df_combined[c]
+            
+    # 把所有因子的 Total_Value 加起来得到超级 Total_Value
+    combined_total_value = pd.Series(0.0, index=df_combined.index)
+    for f_df in factor_results:
+        combined_total_value += f_df["Total_Value"]
+        
+    df_combined["Total_Value"] = combined_total_value
+    # 组合的策略真实百分比回报
+    df_combined["Strategy_Return"] = df_combined["Total_Value"].pct_change().fillna(0.0)
+
+    # （为了报告和画图接口兼容，保留一个汇总的 Position：若任意一因子有头寸则为1）
+    has_pos = pd.Series(False, index=df_combined.index)
+    for f_df in factor_results:
+        has_pos |= (f_df["Position"] > 0)
+    df_combined["Position"] = has_pos.astype(int)
+
+    df = df_combined # 让底下的 df_clean 处理使用组合 df
+    trades = all_trades
+    
     # 3. 净值与指标（去掉均线导致的 NaN）
     print("正在计算指标...")
     df_clean = df.dropna().copy()
@@ -172,7 +235,8 @@ def run_backtest(config=None, config_path=None):
     trades_csv_path = os.path.join(out_dir, paths["trades_filename"])
     report.save_trades_csv(trades, trades_csv_path)
     md_path = os.path.join(out_dir, paths["metrics_filename"])
-    report.write_markdown(md_path, start_date, end_date, strategy_params, result_metrics, capital_params, trades, factor_config=factor_cfg)
+    # 传递 parsed_factors 给报告，这样可以打印出多个因子的配置
+    report.write_markdown(md_path, start_date, end_date, strategy_params, result_metrics, capital_params, trades, factor_config=parsed_factors)
 
     # 6. 图表
     charts.apply_style(out_cfg.get("font_sans_serif"))

@@ -57,8 +57,8 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         资金参数，如 initial, position_ratio。
     trades : list, optional
         交易清单，用于计算总盈亏。
-    factor_config : dict, optional
-        因子配置 {"type", "params"}，用于在报告中展示因子与参数。
+    factor_config : dict or list, optional
+        因子配置（单因子字典或多因子列表），用于在报告中展示因子与参数。
     title_suffix : str
         报告标题后缀，可选。
     """
@@ -75,11 +75,16 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         f"| 出场延迟 | {exit_delay} 根K线 |",
     ]
     if factor_config:
-        ftype = factor_config.get("type", "double_ma")
-        fparams = factor_config.get("params", {})
-        param_rows.append(f"| 因子类型 | {ftype} |")
-        for k, v in sorted(fparams.items()):
-            param_rows.append(f"| 因子.{k} | {v} |")
+        # 兼容字典或多因子的列表
+        f_configs = factor_config if isinstance(factor_config, list) else [factor_config]
+        for i, cfg in enumerate(f_configs):
+            ftype = cfg.get("type", "unknown")
+            fparams = cfg.get("params", {})
+            alloc = cfg.get("capital_alloc", 1.0)
+            prefix = f"因子{i+1}[{ftype}]"
+            param_rows.append(f"| {prefix} 资金占比 | {alloc:.0%} |")
+            for k, v in sorted(fparams.items()):
+                param_rows.append(f"| {prefix}.{k} | {v} |")
     else:
         ma_s = strategy_params.get("ma_short", 5)
         ma_l = strategy_params.get("ma_long", 30)
@@ -153,11 +158,15 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
         f"| 出场延迟 | {strategy_params.get('exit_delay', 0)} 根K线 |",
     ]
     if factor_config:
-        ftype = factor_config.get("type", "double_ma")
-        fparams = factor_config.get("params", {})
-        param_rows.append(f"| 因子类型 | {ftype} |")
-        for k, v in sorted(fparams.items()):
-            param_rows.append(f"| 因子.{k} | {v} |")
+        f_configs = factor_config if isinstance(factor_config, list) else [factor_config]
+        for i, cfg in enumerate(f_configs):
+            ftype = cfg.get("type", "unknown")
+            fparams = cfg.get("params", {})
+            alloc = cfg.get("capital_alloc", 1.0)
+            prefix = f"因子{i+1}[{ftype}]"
+            param_rows.append(f"| {prefix} 资金占比 | {alloc:.0%} |")
+            for k, v in sorted(fparams.items()):
+                param_rows.append(f"| {prefix}.{k} | {v} |")
     else:
         param_rows.extend([
             f"| 价格过滤 | {'启用' if strategy_params.get('use_price_filter', True) else '禁用'} |",

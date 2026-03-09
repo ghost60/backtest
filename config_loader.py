@@ -105,20 +105,37 @@ def get_factor_config(cfg):
     dict
         {"type": "double_ma" | "single_ma", "params": {...}}
     """
-    factor_cfg = cfg.get("factor")
-    if not factor_cfg or not isinstance(factor_cfg, dict):
-        raise ValueError("配置中必须包含 factor 段，且 factor 需为对象。示例: factor: { type: double_ma, params: {...} }")
+    # 向后兼容：可能是字典 (单因子 "factor:") 或列表 (多因子 "factors:")
+    factor_cfg_list = cfg.get("factors")
+    if not factor_cfg_list:
+        single_factor = cfg.get("factor")
+        if single_factor and isinstance(single_factor, dict):
+            factor_cfg_list = [single_factor]
+        else:
+            raise ValueError("配置中必须包含 factor 段(字典)或 factors 段(列表)")
 
-    ftype = (factor_cfg.get("type") or "").strip().lower()
-    if not ftype:
-        raise ValueError("factor 中必须指定 type，例如: factor: { type: double_ma, params: {...} }")
+    parsed_factors = []
+    for factor_cfg in factor_cfg_list:
+        if not isinstance(factor_cfg, dict):
+            raise ValueError("factor 项必须为字典格式。")
 
-    params = dict(factor_cfg.get("params") or {})
+        ftype = (factor_cfg.get("type") or "").strip().lower()
+        if not ftype:
+            raise ValueError("factor 中必须指定 type，例如: type: double_ma")
 
-    if ftype not in ("double_ma", "double_ma_hedge", "single_ma", "adx_ma", "adx_double_ma"):
-        raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, single_ma, adx_ma, adx_double_ma")
+        params = dict(factor_cfg.get("params") or {})
+        capital_alloc = float(factor_cfg.get("capital_alloc", 1.0))
 
-    return {"type": ftype, "params": params}
+        if ftype not in ("double_ma", "double_ma_hedge", "single_ma", "adx_ma", "adx_double_ma"):
+            raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, double_ma_hedge, single_ma, adx_ma, adx_double_ma")
+
+        parsed_factors.append({
+            "type": ftype,
+            "params": params,
+            "capital_alloc": capital_alloc
+        })
+
+    return parsed_factors
 
 
 def get_output_paths(cfg):
