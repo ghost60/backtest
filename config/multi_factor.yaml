@@ -3,7 +3,7 @@
 # ============================================================
 
 data:
-  path: "data/SPY_25Y_yFinance.csv"
+  path: "data/TSLA_25Y_yFinance.csv"
   start_date: "2010-01-01"
   end_date: "2026-03-01"
 
@@ -17,19 +17,19 @@ factors:
   - type: double_ma
     capital_alloc: 0.5 # 分配 50% 初始资金
     params:
-      ma_short: 10
-      ma_long: 60
+      ma_short: 5
+      ma_long: 30
       use_price_filter: true
 
   - type: adx_ma
     capital_alloc: 0.5 # 分配 50% 初始资金
     params:
-      ma_short: 5
-      ma_long: 30
-      adx_threshold: 25
+      adx_threshold: 26
+      moving_avg_day: 110
       adx_period: 14
-      use_price_filter: true
-      combine_mode: "cross_and_adx_level"
+      use_sma14_filter: true
+      use_other_asset: true
+      other_asset_path: "data/^GSPC_25Y_yFinance.csv"
 
 capital:
   initial: 2000000 # 组合总初始资金（上面各分 100 万）

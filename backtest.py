@@ -18,7 +18,6 @@ from .report import report
 from . import data_loader
 from .factor import factor_double_ma
 from .factor import factor_adx_ma
-from .factor import factor_adx_double_ma
 from .factor import factor_double_ma_hedge
 from .engine.single_asset import run_single_asset
 from .report.quan_stats_report import generate_qs_report
@@ -29,7 +28,6 @@ FACTOR_REGISTRY = {
     "double_ma": (factor_double_ma, "calculate_double_ma_factors"),
     "double_ma_hedge": (factor_double_ma_hedge, "calculate_double_ma_hedge_factors"),
     "adx_ma": (factor_adx_ma, "calculate_adx_ma_factors"),
-    "adx_double_ma": (factor_adx_double_ma, "calculate_adx_double_ma_factors"),
 }
 # 各因子输出的买卖信号列名（当前单/双均线一致，后续可扩展为从因子返回）
 SIGNAL_BUY_COL = "MA_Buy_Signal"
