@@ -49,17 +49,21 @@ def calculate_adx_ma_factors(
     )
     adx = df["ADX"]
 
-    # 2. 长均线：本标的 110 日（Pine: sma_close_225 / selected_ma）
+    # 2. 长均线（Pine: sma_close_225 / selected_ma）
+    #    use_other_asset 时 MA 列存「其他资产」的均线，便于信号打印时显示正确的值
     ma_long_col = f"MA{moving_avg_day}"
-    df[ma_long_col] = df["Close"].rolling(window=moving_avg_day).mean().round(3)
+    if use_other_asset and other_asset_df is not None and len(other_asset_df) > 0:
+        other_ma = other_asset_df["Close"].rolling(window=moving_avg_day).mean()
+        other_ma_aligned = other_ma.reindex(df.index, method="ffill")
+        df[ma_long_col] = other_ma_aligned.round(3)
+    else:
+        df[ma_long_col] = df["Close"].rolling(window=moving_avg_day).mean().round(3)
 
     # 3. 是否用其他资产做长均线过滤（Pine: use_other_asset, selected_close, selected_ma）
     if use_other_asset and other_asset_df is not None and len(other_asset_df) > 0:
         other_close = other_asset_df["Close"].reindex(df.index, method="ffill")
-        other_ma = other_asset_df["Close"].rolling(window=moving_avg_day).mean()
-        other_ma_aligned = other_ma.reindex(df.index, method="ffill")
-        price_above_ma = other_close > other_ma_aligned
-        price_below_ma = other_close < other_ma_aligned
+        price_above_ma = other_close > df[ma_long_col]
+        price_below_ma = other_close < df[ma_long_col]
     else:
         price_above_ma = df["Close"] > df[ma_long_col]
         price_below_ma = df["Close"] < df[ma_long_col]
@@ -72,11 +76,13 @@ def calculate_adx_ma_factors(
         sma14_ok = pd.Series(True, index=df.index)
 
     # 5. 入场：ADX 上穿阈值 且 长均线过滤 且（可选）SMA14
-    adx_cross_up = (adx > adx_threshold) & (adx.shift(1) <= adx_threshold)
+    # Pine: ta.crossover(adx_value, adx_threshold) → 前一根严格 < 阈值，当前根严格 > 阈值
+    adx_cross_up = (adx > adx_threshold) & (adx.shift(1) < adx_threshold)
     buy_signal = adx_cross_up & price_above_ma & sma14_ok
 
     # 6. 出场：ADX 下穿阈值 或 跌破长均线
-    adx_cross_down = (adx < adx_threshold) & (adx.shift(1) >= adx_threshold)
+    # Pine: ta.crossunder(adx_value, adx_threshold) → 前一根严格 > 阈值，当前根严格 < 阈值
+    adx_cross_down = (adx < adx_threshold) & (adx.shift(1) > adx_threshold)
     sell_signal = adx_cross_down | price_below_ma
 
     df["MA_Buy_Signal"] = buy_signal

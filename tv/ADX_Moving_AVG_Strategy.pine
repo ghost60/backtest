@@ -2,8 +2,9 @@
 // © Jacob_Jia
 
 //@version=6
+// process_orders_on_close=true：信号当根收盘成交，与 Python entry_delay=-1 更接近（默认下一根开盘才成交）
 strategy("ADX Moving AVG Strategy", overlay=false,  default_qty_value = 95, 
- default_qty_type = strategy.percent_of_equity)
+ default_qty_type = strategy.percent_of_equity, process_orders_on_close = true)
 
 var bool inTradeWindow = true
 // ⽤户定义的回测时间窗⼜
@@ -44,13 +45,22 @@ adx(dilen, adxlen) =>
 	adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
 adx_value = adx(dilen, adxlen)
 
-
-plot(adx_value, linewidth = 2)
-plot(adx_threshold,color=color.black)
 sma_close_225 = ta.sma(close, moving_avg_day)
 sma_close_14 = ta.sma(close, 14)
 
-plot(sma_close_225,force_overlay = true)
+plot(adx_value, title="当前ADX", linewidth = 2)
+plot(adx_threshold,title="ADX过滤值", color=color.black)
+plot(selected_ma,title="长均线值", force_overlay = true)
+// 条件分解：价格是否在长均线之上（根据 use_other_asset 切换）
+price_above_ma = use_other_asset ? (selected_close > selected_ma) : (close > sma_close_225)
+// 条件分解：SMA14 是否在抬升
+sma14_up = sma_close_14 > sma_close_14[14]
+// 只在数据窗口里显示 0/1，便于检查条件是否满足
+plot(price_above_ma ? 1 : 0, title="价格>长均线", display=display.data_window)
+plot(sma14_up       ? 1 : 0, title="SMA14>SMA14[14]", display=display.data_window)
+filters_ok = price_above_ma and sma14_up
+plot(filters_ok ? 1 : 0, title="过滤条件通过", display=display.data_window)
+
 var bool longCondition = false
 if not if_sma14_filtered
 	if use_other_asset
