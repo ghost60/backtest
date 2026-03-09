@@ -14,9 +14,9 @@ data:
 # ---------- 策略参数（执行层：与因子无关） ----------
 # 仅保留信号后的执行规则；因子类型与参数见下方 factor 段
 strategy:
-  name: "ma_cross"              # 策略标识
-  entry_delay: 0                # 信号出现后延迟几根 K 线入场，0 表示下一根即可
-  exit_delay: 0                 # 信号出现后延迟几根 K 线出场
+  name: "ma_cross" # 策略标识
+  entry_delay: 0 # 信号出现后延迟几根 K 线入场，0 表示下一根即可
+  exit_delay: 0 # 信号出现后延迟几根 K 线出场
 
 # ---------- 因子选择 ----------
 # 因子决定买卖信号；参数随 type 不同而不同（double_ma / single_ma）
@@ -29,13 +29,14 @@ factor:
 
 # ---------- 资金管理 ----------
 capital:
-  initial: 1000000               # 初始资金（美元）
-  position_ratio: 1.0           # 持仓比例：1.0 表示全仓，0.5 表示半仓
+  initial: 1000000 # 初始资金（美元）
+  position_ratio: 1.0 # 持仓比例：1.0 表示全仓，0.5 表示半仓
+  max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
 
 # ---------- 输出 ----------
 output:
-  dir: "result"            # 结果目录，相对项目根；图表与 Markdown 均写在此目录
+  dir: "result" # 结果目录，相对项目根；图表与 Markdown 均写在此目录
   chart_filename: "backtest_results_tsla.png"
   metrics_filename: "backtest_metrics_tsla.md"
-  chart_figsize: [12, 10]       # 图表宽高（英寸）
+  chart_figsize: [12, 10] # 图表宽高（英寸）
 

@@ -23,6 +23,7 @@ factor:
 capital:
   initial: 1000000
   position_ratio: 1.0
+  max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
 
 hedge:
   enabled: true

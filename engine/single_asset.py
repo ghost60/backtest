@@ -6,6 +6,8 @@
 职责：
 - 接收已经算好的买入 / 卖出信号（因子层负责生成）
 - 按给定的入场 / 出场延迟、初始资金与仓位比例，执行逐 K 线撮合
+- 支持 max_leverage 杠杆倍数：买入时放大投入，超出自有资金部分计为借贷，
+  卖出时先偿还借贷，剩余归还账户现金
 - 产出：
   - Position / Market_Return / Strategy_Return 列
   - 详细交易清单 trades（含每笔盈亏与累计盈亏）
@@ -30,6 +32,7 @@ def run_single_asset(
     exit_delay: int = 0,
     initial_capital: float = 100000,
     position_ratio: float = 1.0,
+    max_leverage: float = 1.0,
     price_col: str = "Open",
 ) -> Tuple[pd.DataFrame, List[Dict]]:
     """
@@ -43,14 +46,17 @@ def run_single_asset(
         买入 / 卖出信号布尔序列，索引需与 df 对齐。
     entry_delay : int
         入场延迟 K 数，语义与 MA 策略相同：
-        - 0 表示“信号后第 1 根 K 线”入场
-        - N 表示“信号后第 N+1 根 K 线”入场
+        - 0 表示"信号后第 1 根 K 线"入场
+        - N 表示"信号后第 N+1 根 K 线"入场
     exit_delay : int
         出场延迟 K 数，语义与 entry_delay 类似。
     initial_capital : float
         初始资金。
     position_ratio : float
         持仓比例（0~1），例如 1.0=全仓，0.5=半仓。
+    max_leverage : float
+        最大杠杆倍数（>= 1.0），默认 1.0 不使用杠杆。
+        例如 2.0 表示最多用 2 倍杠杆买入（超出持有现金部分算作借贷）。
     price_col : str
         撮合成交价所使用的列名，默认 "Open"。
 
@@ -62,6 +68,7 @@ def run_single_asset(
         - trades: 交易清单列表
     """
     df = df.copy()
+    max_leverage = max(1.0, float(max_leverage))
 
     position = 0
     positions: List[int] = []
@@ -73,6 +80,7 @@ def run_single_asset(
     entry_price = 0.0
     trade_id = 0
     shares = 0
+    borrowed = 0.0
     cash = float(initial_capital)
 
     for i in range(len(df)):
@@ -91,8 +99,12 @@ def run_single_asset(
             exit_signal_wait = -1
             position = 0
 
-            pnl = round((price - entry_price) * shares, 2)
-            cash += shares * price
+            sell_proceeds = shares * price
+            # 还贷后剩余归账户现金
+            cash += sell_proceeds - borrowed
+            # pnl = 卖出所得 - 归还借贷 - 自有资金净投入
+            own_invested = entry_price * shares - borrowed
+            pnl = round(sell_proceeds - borrowed - own_invested, 2)
             pnl_pct = round((price - entry_price) / entry_price * 100, 2) if entry_price != 0 else 0.0
 
             trades.append(
@@ -102,7 +114,9 @@ def run_single_asset(
                     "action": "卖出",
                     "price": round(price, 2),
                     "shares": shares,
-                    "position_value": round(shares * price, 2),
+                    "position_value": round(sell_proceeds, 2),
+                    "leverage": round(max_leverage, 2),
+                    "borrowed": round(borrowed, 2),
                     "cash": round(cash, 2),
                     "pnl": pnl,
                     "pnl_pct": pnl_pct,
@@ -111,6 +125,7 @@ def run_single_asset(
                 }
             )
             shares = 0
+            borrowed = 0.0
 
         # 3. 金叉信号检测（仅空仓时跟踪；持仓时清零）
         if position == 0:
@@ -131,16 +146,19 @@ def run_single_asset(
             entry_price = price
             trade_id += 1
 
-            invest_amount = cash * float(position_ratio)
+            invest_amount = cash * float(position_ratio) * max_leverage
             shares = int(invest_amount / price) if price > 0 else 0
             if shares == 0:
                 # 资金不足，放弃本次信号
                 position = 0
                 trade_id -= 1
+                borrowed = 0.0
             else:
-                cash -= shares * price
+                actual_cost = shares * price
+                borrowed = max(0.0, actual_cost - cash)   # 超出自有资金部分
+                cash -= (actual_cost - borrowed)           # 只扣除自有资金
 
-                # 特殊情况：若同一根 K 线同时出现卖出信号，则视作“当日死叉”，
+                # 特殊情况：若同一根 K 线同时出现卖出信号，则视作"当日死叉"，
                 # 在下一根 K 线强制出场
                 if bool(sell_signal.iloc[i]):
                     exit_signal_wait = 0
@@ -153,6 +171,8 @@ def run_single_asset(
                     "price": round(price, 2),
                     "shares": shares,
                     "position_value": round(shares * price, 2),
+                    "leverage": round(max_leverage, 2),
+                    "borrowed": round(borrowed, 2),
                     "cash": round(cash, 2),
                     "pnl": None,
                     "pnl_pct": None,
@@ -181,4 +201,3 @@ def run_single_asset(
     df["Strategy_Return"] = df["Position"].shift(1) * df["Market_Return"]
 
     return df, trades
-

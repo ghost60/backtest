@@ -150,6 +150,7 @@ def run_backtest(config=None, config_path=None):
         exit_delay=strategy_params.get("exit_delay", 0),
         initial_capital=capital_params.get("initial_capital", 100000),
         position_ratio=capital_params.get("position_ratio", 1.0),
+        max_leverage=capital_params.get("max_leverage", 1.0),
         price_col="Open",
     )
 

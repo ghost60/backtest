@@ -145,6 +145,7 @@ def get_capital_params(cfg):
     return {
         "initial_capital": c.get("initial", 100000),
         "position_ratio": c.get("position_ratio", 1.0),
+        "max_leverage": c.get("max_leverage", 1.0),
     }
 
 
