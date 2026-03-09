@@ -1,0 +1,45 @@
+# ============================================================
+# ADX + Double MA 组合策略配置
+# 使用方式: python main.py  （已在 main.py 中设置为默认）
+#           或: python -m backtest -c config/adx_double_ma.yaml
+# ============================================================
+#
+# 策略逻辑：
+#   入场：短均线【金叉】长均线 AND ADX > 阈值（趋势足够强）
+#        且可选 Close > 短均线 过滤
+#   出场：短均线【死叉】长均线 OR ADX 下穿阈值（趋势减弱）
+#
+# combine_mode 说明：
+#   "and"                - 入场需同时发生金叉 AND ADX 上穿阈值（极严格）
+#   "cross_and_adx_level"- 入场需金叉 AND ADX 已在阈值以上（推荐/默认）
+# ============================================================
+
+data:
+  path: "data/TSLA_25Y_yFinance.csv"
+  start_date: "2010-01-01"
+  end_date: "2026-03-01"
+
+strategy:
+  name: "adx_double_ma"
+  entry_delay: 0 # 0 = 下一根K线成交；-1 = 信号K线当根成交
+  exit_delay: 0
+
+factor:
+  type: adx_double_ma
+  params:
+    ma_short: 5 # 短均线周期
+    ma_long: 30 # 长均线周期
+    adx_threshold: 26 # ADX 入场/出场阈值
+    adx_period: 14 # ADX/DI 计算周期
+    use_price_filter: true # true = 要求 Close > 短均线才入场
+    combine_mode: "cross_and_adx_level" # 推荐：金叉时ADX已>阈值
+
+capital:
+  initial: 1000000
+  position_ratio: 1.0
+
+output:
+  dir: "result"
+  chart_filename: "backtest_results_adx_double_ma.png"
+  metrics_filename: "backtest_metrics_adx_double_ma.md"
+  chart_figsize: [12, 10]

@@ -115,8 +115,8 @@ def get_factor_config(cfg):
 
     params = dict(factor_cfg.get("params") or {})
 
-    if ftype not in ("double_ma", "single_ma", "adx_ma"):
-        raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, single_ma, adx_ma")
+    if ftype not in ("double_ma", "double_ma_hedge", "single_ma", "adx_ma", "adx_double_ma"):
+        raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, single_ma, adx_ma, adx_double_ma")
 
     return {"type": ftype, "params": params}
 
