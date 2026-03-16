@@ -68,6 +68,7 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
 
     initial = capital_params.get("initial", 100000) if capital_params else 100000
     pos_ratio = capital_params.get("position_ratio", 1.0) if capital_params else 1.0
+    max_leverage = capital_params.get("max_leverage", 1.0) if capital_params else 1.0
     entry_delay = strategy_params.get("entry_delay", 0)
     exit_delay = strategy_params.get("exit_delay", 0)
     param_rows = [
@@ -109,6 +110,7 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         "| :--- | :--- |",
         f"| 初始资金 | ${initial:,.0f} |",
         f"| 持仓比例 | {pos_ratio:.0%} |",
+        f"| 最大杠杆倍数 | {max_leverage:.2f}x |",
         "",
         "### 策略参数",
         "",
@@ -174,10 +176,20 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
             f"| 长均线周期 | {strategy_params.get('ma_long', 30)} |",
         ])
 
+    initial = capital_params.get("initial", 100000) if capital_params else 100000
+    max_leverage = capital_params.get("max_leverage", 1.0) if capital_params else 1.0
+
     lines = [
         "# 对冲策略回测表现报告" + (" " + title_suffix if title_suffix else ""),
         "",
         f"**回测周期**: {start_date} 至 {end_date}",
+        "",
+        "### 资金参数",
+        "",
+        "| 参数 | 值 |",
+        "| :--- | :--- |",
+        f"| 初始资金 | ${initial:,.0f} |",
+        f"| 最大杠杆倍数 | {max_leverage:.2f}x |",
         "",
         "### 策略说明",
         "",
@@ -200,7 +212,6 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
         "| :--- | :--- |",
     ]
 
-    initial = capital_params.get("initial", 100000) if capital_params else 100000
     total_pnl = 0
     total_return_pct = 0
     if trades:

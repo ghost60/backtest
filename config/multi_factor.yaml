@@ -34,7 +34,7 @@ factors:
 capital:
   initial: 2000000 # 组合总初始资金（上面各分 100 万）
   position_ratio: 1.0 # 默认满仓（每个因子根据自己的可用资金进行100%投入）
-  max_leverage: 1.0 # 各因子使用的最大杠杆倍数
+  max_leverage: 2.0 # 各因子使用的最大杠杆倍数
 
 output:
   dir: "result"
