@@ -115,16 +115,16 @@ def run_single_asset(
                     "trade_id": trade_id,
                     "date": date,
                     "action": "卖出",
-                    "price": round(price, 2),
-                    "shares": shares,
-                    "position_value": round(sell_proceeds, 2),
-                    "leverage": round(max_leverage, 2),
-                    "borrowed": round(borrowed, 2),
-                    "cash": round(cash, 2),
-                    "pnl": pnl,
-                    "pnl_pct": pnl_pct,
-                    "cum_pnl": None,
-                    "cum_pnl_pct": None,
+                    "price": round(price, 2),#卖出价格
+                    "shares": shares,#卖出股数
+                    "position_value": round(sell_proceeds, 2),#卖出总金额
+                    "leverage": round(max_leverage, 2),#杠杆倍数
+                    "borrowed": round(borrowed, 2),#借贷金额
+                    "cash": round(cash, 2),#卖出后账户现金
+                    "pnl": pnl,#本次交易盈亏
+                    "pnl_pct": pnl_pct,#本次交易盈亏百分比
+                    "cum_pnl": None,#累计盈亏
+                    "cum_pnl_pct": None,#累计盈亏百分比
                 }
             )
             shares = 0
