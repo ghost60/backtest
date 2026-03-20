@@ -16,7 +16,7 @@ data:
 strategy:
   name: "adx_ma"
   # -1 表示信号产生当根 K 线立即成交；0 表示下一根 K 线成交
-  entry_delay: 0
+  entry_delay: -1
   exit_delay: -1
 
 factor:
