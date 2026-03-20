@@ -154,7 +154,13 @@ def run_backtest(config=None, config_path=None):
         
         print(f"\n--- 开始运行因子 {i+1}/{len(parsed_factors)}: {factor_type} ---")
         print(f"参数: {factor_params}")
-        print(f"分配资金: {allocated_capital} (占比 {alloc_ratio*100}%)")
+        pos_ratio = float(capital_params.get("position_ratio", 1.0))
+        max_leverage = float(capital_params.get("max_leverage", 1.0))
+        max_buy_power = allocated_capital * pos_ratio * max_leverage
+        print(
+            f"分配资金: {allocated_capital} (占比 {alloc_ratio*100}%)  "
+            f"杠杆上限: {max_leverage:.2f}x  最大可用买入规模: {max_buy_power:,.0f}"
+        )
         
         # 计算因子信号
         factor_df = factor_fn(df.copy(), **factor_params)
@@ -219,7 +225,7 @@ def run_backtest(config=None, config_path=None):
     print("正在计算指标...")
     df_clean = df.dropna().copy()
     df_clean = metrics.calculate_equity(df_clean)
-    result_metrics = metrics.calculate_metrics(df_clean)
+    result_metrics = metrics.calculate_metrics(df_clean, trades=trades)
 
     # 4. 终端报告
     report.print_metrics(result_metrics)

@@ -62,7 +62,7 @@ def load_config(config_path=None):
     if config_path and os.path.isfile(config_path):
         path = Path(config_path)
     else:
-        path = PACKAGE_DIR / "config" / "default.yaml"
+        path = PACKAGE_DIR / "config" / "double_ma.yaml"
 
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
@@ -126,8 +126,8 @@ def get_factor_config(cfg):
         params = dict(factor_cfg.get("params") or {})
         capital_alloc = float(factor_cfg.get("capital_alloc", 1.0))
 
-        if ftype not in ("double_ma", "double_ma_hedge", "single_ma", "adx_ma", "adx_double_ma"):
-            raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, double_ma_hedge, single_ma, adx_ma, adx_double_ma")
+        if ftype not in ("double_ma", "double_ma_hedge", "adx_ma"):
+            raise ValueError(f"不支持的因子类型: {ftype}，可选: double_ma, double_ma_hedge, adx_ma")
 
         parsed_factors.append({
             "type": ftype,

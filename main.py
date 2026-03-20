@@ -15,8 +15,6 @@ _PKG_DIR = Path(__file__).resolve().parent
 if str(_PKG_DIR.parent) not in sys.path:
     sys.path.insert(0, str(_PKG_DIR.parent))
 
-from backtest.backtest import run_backtest
-
 def main():
     parser = argparse.ArgumentParser(description="TSLA MA 金叉死叉策略回测")
     parser.add_argument("-c", "--config", default="config/double_ma.yaml", help="配置文件路径 (YAML)")

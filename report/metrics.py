@@ -23,7 +23,7 @@ def calculate_equity(df):
     return df
 
 
-def calculate_metrics(df):
+def calculate_metrics(df, trades=None):
     """
     计算回测绩效与交易统计。
 
@@ -70,13 +70,24 @@ def calculate_metrics(df):
     std = ret.std()
     sharpe = (ret.mean() / std * np.sqrt(252)) if std and std != 0 else 0.0
 
-    # 交易统计：按持仓区间分组，每段持仓对应一笔交易
-    pos = df["Position"]
-    group = (pos != pos.shift()).cumsum()
-    hold_periods = df.loc[pos == 1].groupby(group.loc[pos == 1])
-    trade_returns = [(1 + g["Market_Return"]).prod() - 1 for _, g in hold_periods if len(g) > 0]
-    n_trades = len(trade_returns)
-    n_win = sum(1 for r in trade_returns if r > 0)
+    # 交易统计：优先基于真实成交结果，避免和延迟进出场、开盘成交价、杠杆口径脱节
+    realized_trades = []
+    if trades:
+        realized_trades = [
+            t for t in trades
+            if t.get("action") == "卖出" and t.get("pnl") is not None
+        ]
+
+    if realized_trades:
+        n_trades = len(realized_trades)
+        n_win = sum(1 for t in realized_trades if float(t["pnl"]) > 0)
+    else:
+        pos = df["Position"]
+        group = (pos != pos.shift()).cumsum()
+        hold_periods = df.loc[pos == 1].groupby(group.loc[pos == 1])
+        trade_returns = [(1 + g["Market_Return"]).prod() - 1 for _, g in hold_periods if len(g) > 0]
+        n_trades = len(trade_returns)
+        n_win = sum(1 for r in trade_returns if r > 0)
 
     return {
         "策略总回报": total_strategy,
