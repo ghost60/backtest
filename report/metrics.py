@@ -9,7 +9,61 @@
 """
 
 import numpy as np
-import pandas as pd
+
+
+def _calculate_trade_drawdown(trades=None):
+    """
+    基于已平仓交易序列计算“最大交易回撤（连续亏损段口径）”。
+
+    口径：
+    - 使用每笔平仓交易的收益率（优先 pnl_pct，缺失时由 cum_pnl_pct 差分近似）
+    - 将连续亏损交易的百分比绝对值累加；遇到非亏损交易（>=0）则清零重算
+    - 取所有连续亏损段中的最大累计值，作为“最大交易回撤”
+    - 返回负数比例（例如 7% 回撤返回 -0.07）
+    """
+    if not trades:
+        return 0.0
+
+    realized_trade_rets = []
+    prev_cum_pct = None
+
+    for t in trades:
+        pnl = t.get("pnl")
+        if pnl is None:
+            continue
+
+        t_pct = t.get("pnl_pct")
+        if t_pct is not None:
+            try:
+                realized_trade_rets.append(float(t_pct) / 100.0)
+                continue
+            except (TypeError, ValueError):
+                pass
+
+        # 兜底：由累计收益率差分得到单笔收益率近似
+        cum_pct = t.get("cum_pnl_pct")
+        if cum_pct is not None:
+            try:
+                cum_pct = float(cum_pct)
+                if prev_cum_pct is not None:
+                    realized_trade_rets.append((cum_pct - prev_cum_pct) / 100.0)
+                prev_cum_pct = cum_pct
+            except (TypeError, ValueError):
+                pass
+
+    if not realized_trade_rets:
+        return 0.0
+
+    current_loss_run = 0.0
+    max_loss_run = 0.0
+    for r in realized_trade_rets:
+        if r < 0:
+            current_loss_run += -r
+            max_loss_run = max(max_loss_run, current_loss_run)
+        else:
+            current_loss_run = 0.0
+
+    return float(-max_loss_run)
 
 
 def calculate_equity(df):
@@ -89,10 +143,13 @@ def calculate_metrics(df, trades=None):
         n_trades = len(trade_returns)
         n_win = sum(1 for r in trade_returns if r > 0)
 
+    max_trade_drawdown = _calculate_trade_drawdown(trades=trades)
+
     return {
         "策略总回报": total_strategy,
         "策略年化回报": cagr_strategy,
         "最大净值回撤": max_drawdown,
+        "最大交易回撤": max_trade_drawdown,
         "最大净值回撤开始日期": peak_date,
         "最大净值回撤谷底日期": trough_date,
         "最大净值回撤修复日期": recovery_date,
@@ -119,7 +176,7 @@ def calculate_equity_hedge(df, n_hedges):
     return df
 
 
-def calculate_metrics_hedge(df, hedge_names):
+def calculate_metrics_hedge(df, hedge_names, trades=None):
     """
     计算对冲策略的绩效指标。
     """
@@ -150,6 +207,7 @@ def calculate_metrics_hedge(df, hedge_names):
         "对冲策略总回报": total_strategy,
         "对冲策略年化回报": cagr_strategy,
         "最大回撤": max_drawdown,
+        "最大交易回撤": _calculate_trade_drawdown(trades=trades),
         "夏普比率": sharpe,
         "TSLA持有总回报": total_tsla,
         "TSLA持有年化回报": cagr_tsla,

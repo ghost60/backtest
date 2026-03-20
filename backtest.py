@@ -315,7 +315,7 @@ def run_hedge_backtest(config=None, config_path=None):
     print("正在计算指标...")
     df_clean = df_combined.dropna().copy()
     df_clean = metrics.calculate_equity_hedge(df_clean, len(hedge_dfs))
-    result_metrics = metrics.calculate_metrics_hedge(df_clean, hedge_names)
+    result_metrics = metrics.calculate_metrics_hedge(df_clean, hedge_names, trades=trades)
 
     # 4. 终端报告
     report.print_metrics(result_metrics, title="对冲策略表现报告 (HEDGE PERFORMANCE REPORT)")
