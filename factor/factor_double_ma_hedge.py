@@ -17,7 +17,8 @@ from .factor_double_ma import calculate_double_ma_factors
 
 
 def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=True,
-        entry_delay=0, exit_delay=0, initial_capital=100000, position_ratio=1.0, hedge_names=None):
+        entry_delay=0, exit_delay=0, initial_capital=100000, position_ratio=1.0,
+        max_leverage=1.0, margin_currency="USD", margin_fx_to_usd=1.0, hedge_names=None):
     """
     运行 Double MA 对冲策略。
 
@@ -66,6 +67,11 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     sell_signal = tsla_df["MA_Sell_Signal"]
 
     # 3. 撮合层：逐 K 线模拟主标 vs 对冲组合切换与资金
+    if margin_fx_to_usd <= 0:
+        raise ValueError("margin_fx_to_usd 必须大于 0。")
+    margin_currency = str(margin_currency).upper()
+    money_digits = 2 if margin_currency == "USD" else 8
+
     tsla_pos_list = []
     # hedge_pos_matrix[hedge_idx][k_idx]
     hedge_pos_matrix = [[] for _ in range(len(hedge_dfs))]
@@ -86,14 +92,18 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
         for h_idx, h_name in enumerate(hedge_names):
             h_price = hedge_dfs[h_idx]["Open"].iloc[0]
             entry_prices[h_name] = h_price
+            hedge_notional_usd = current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx]
             trades.append({
                 "trade_id": 0,
                 "date": tsla_df.index[0],
                 "action": f"买入{h_name}(初始)",
                 "price": round(h_price, 2),
-                "shares": int(current_portfolio_value * position_ratio * weights[h_idx] / h_price),
-                "position_value": round(current_portfolio_value * position_ratio * weights[h_idx], 2),
-                "cash": round(current_portfolio_value * (1 - position_ratio), 2) if h_idx == len(hedge_names)-1 else "-",
+                "shares": int(hedge_notional_usd / h_price),
+                "position_value": round(hedge_notional_usd, 2),
+                "position_value_margin": round(hedge_notional_usd / margin_fx_to_usd, money_digits),
+                "cash": round(current_portfolio_value * (1 - position_ratio), money_digits) if h_idx == len(hedge_names)-1 else "-",
+                "margin_currency": margin_currency,
+                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
                 "pnl": None,
                 "pnl_pct": None,
                 "cum_pnl": None,
@@ -151,10 +161,13 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                         "date": date,
                         "action": f"卖出{h_name}",
                         "price": round(h_price, 2),
-                        "shares": int(current_portfolio_value * position_ratio * h_weight / h_price),
+                        "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio * h_weight / h_price),
                         "position_value": 0,
+                        "position_value_margin": 0,
                         "cash": "-", # 过程值
-                        "pnl": round(h_pnl, 2),
+                        "margin_currency": margin_currency,
+                        "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                        "pnl": round(h_pnl, money_digits),
                         "pnl_pct": round(h_ret * 100, 2),
                         "cum_pnl": None,
                         "cum_pnl_pct": None
@@ -170,9 +183,12 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "date": date,
                 "action": "买入TSLA",
                 "price": round(price, 2),
-                "shares": int(current_portfolio_value * position_ratio / price),
-                "position_value": round(current_portfolio_value * position_ratio, 2),
-                "cash": round(current_portfolio_value * (1 - position_ratio), 2),
+                "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio / price),
+                "position_value": round(current_portfolio_value * margin_fx_to_usd * position_ratio, 2),
+                "position_value_margin": round(current_portfolio_value * position_ratio, money_digits),
+                "cash": round(current_portfolio_value * (1 - position_ratio), money_digits),
+                "margin_currency": margin_currency,
+                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
                 "pnl": None,
                 "pnl_pct": None,
                 "cum_pnl": None,
@@ -205,8 +221,11 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "price": round(price, 2),
                 "shares": 0,
                 "position_value": 0,
-                "cash": round(current_portfolio_value, 2),
-                "pnl": round(tsla_pnl, 2),
+                "position_value_margin": 0,
+                "cash": round(current_portfolio_value, money_digits),
+                "margin_currency": margin_currency,
+                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                "pnl": round(tsla_pnl, money_digits),
                 "pnl_pct": round(tsla_ret * 100, 2),
                 "cum_pnl": None,
                 "cum_pnl_pct": None
@@ -222,9 +241,12 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                         "date": date,
                         "action": f"买入{h_name}",
                         "price": round(h_price, 2),
-                        "shares": int(current_portfolio_value * position_ratio * weights[h_idx] / h_price),
-                        "position_value": round(current_portfolio_value * position_ratio * weights[h_idx], 2),
+                        "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx] / h_price),
+                        "position_value": round(current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx], 2),
+                        "position_value_margin": round(current_portfolio_value * position_ratio * weights[h_idx], money_digits),
                         "cash": "-",
+                        "margin_currency": margin_currency,
+                        "margin_fx_to_usd": round(margin_fx_to_usd, 6),
                         "pnl": None,
                         "pnl_pct": None,
                         "cum_pnl": None,

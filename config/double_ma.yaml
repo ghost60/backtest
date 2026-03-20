@@ -32,6 +32,8 @@ capital:
   initial: 1000000 # 初始资金（美元）
   position_ratio: 1.0 # 持仓比例：1.0 表示全仓，0.5 表示半仓
   max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
+  margin_currency: "BTC" # 保证金币种：USD / BTC / ETH
+  margin_fx_to_usd: 50000.0 # 1 保证金币种=多少 USD（USD 固定 1；BTC/ETH 需显式配置）
 
 # ---------- 输出 ----------
 output:
@@ -39,4 +41,3 @@ output:
   chart_filename: "backtest_results_tsla.png"
   metrics_filename: "backtest_metrics_tsla.md"
   chart_figsize: [12, 10] # 图表宽高（英寸）
-

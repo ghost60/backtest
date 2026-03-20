@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from config_loader import get_factor_config, load_config
+from config_loader import get_capital_params, get_factor_config, load_config
 from report import metrics
 
 
@@ -16,6 +16,15 @@ class ConfigLoaderRegressionTests(unittest.TestCase):
     def test_get_factor_config_rejects_unregistered_factor_type(self):
         with self.assertRaises(ValueError):
             get_factor_config({"factor": {"type": "single_ma", "params": {}}})
+
+    def test_get_capital_params_accepts_margin_currency_usd_by_default(self):
+        params = get_capital_params({"capital": {"initial": 1000}})
+        self.assertEqual(params["margin_currency"], "USD")
+        self.assertEqual(params["margin_fx_to_usd"], 1.0)
+
+    def test_get_capital_params_requires_fx_for_non_usd_margin(self):
+        with self.assertRaises(ValueError):
+            get_capital_params({"capital": {"initial": 1.0, "margin_currency": "BTC"}})
 
 
 class MetricsRegressionTests(unittest.TestCase):

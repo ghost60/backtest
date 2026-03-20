@@ -159,10 +159,28 @@ def get_output_paths(cfg):
 def get_capital_params(cfg):
     """从配置中取出资金参数字典。"""
     c = cfg.get("capital", {})
+    margin_currency = str(c.get("margin_currency", "USD")).upper()
+    if margin_currency not in ("USD", "BTC", "ETH"):
+        raise ValueError(f"不支持的保证金币种: {margin_currency}，可选: USD, BTC, ETH")
+
+    margin_fx_to_usd = c.get("margin_fx_to_usd")
+    if margin_currency == "USD":
+        margin_fx_to_usd = 1.0 if margin_fx_to_usd is None else float(margin_fx_to_usd)
+    else:
+        if margin_fx_to_usd is None:
+            raise ValueError(
+                f"保证金币种为 {margin_currency} 时，必须在 capital.margin_fx_to_usd 中设置该币种兑 USD 汇率。"
+            )
+        margin_fx_to_usd = float(margin_fx_to_usd)
+        if margin_fx_to_usd <= 0:
+            raise ValueError("capital.margin_fx_to_usd 必须大于 0。")
+
     return {
         "initial_capital": c.get("initial", 100000),
         "position_ratio": c.get("position_ratio", 1.0),
         "max_leverage": c.get("max_leverage", 1.0),
+        "margin_currency": margin_currency,
+        "margin_fx_to_usd": margin_fx_to_usd,
     }
 
 

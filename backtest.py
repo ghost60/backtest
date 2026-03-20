@@ -158,10 +158,15 @@ def run_backtest(config=None, config_path=None):
         print(f"参数: {factor_params}")
         pos_ratio = float(capital_params.get("position_ratio", 1.0))
         max_leverage = float(capital_params.get("max_leverage", 1.0))
-        max_buy_power = allocated_capital * pos_ratio * max_leverage
+        margin_currency = str(capital_params.get("margin_currency", "USD")).upper()
+        margin_fx_to_usd = float(capital_params.get("margin_fx_to_usd", 1.0))
+        max_buy_power_margin = allocated_capital * pos_ratio * max_leverage
+        max_buy_power_usd = max_buy_power_margin * margin_fx_to_usd
         print(
             f"分配资金: {allocated_capital} (占比 {alloc_ratio*100}%)  "
-            f"杠杆上限: {max_leverage:.2f}x  最大可用买入规模: {max_buy_power:,.0f}"
+            f"保证金币种: {margin_currency}  "
+            f"杠杆上限: {max_leverage:.2f}x  "
+            f"最大可用买入规模: {max_buy_power_margin:,.4f} {margin_currency} (~{max_buy_power_usd:,.0f} USD)"
         )
         
         # 计算因子信号
@@ -182,6 +187,8 @@ def run_backtest(config=None, config_path=None):
             initial_capital=allocated_capital,
             position_ratio=capital_params.get("position_ratio", 1.0),
             max_leverage=capital_params.get("max_leverage", 1.0),
+            margin_currency=capital_params.get("margin_currency", "USD"),
+            margin_fx_to_usd=capital_params.get("margin_fx_to_usd", 1.0),
             price_col="Open",
         )
         
