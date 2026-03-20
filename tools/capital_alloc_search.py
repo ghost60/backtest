@@ -41,8 +41,30 @@ CONFIG_PATH = "config/multi_factor.yaml"
 # 注意：步长越小，组合数量越多，运行时间越长
 ALLOC_STEP = 0.2
 
-# 目标评价指标（来自 metrics.calculate_metrics 的返回字典）
-TARGET_METRIC = "策略总回报"
+# 选择搜索排序口径（二选一，注释掉另一行即可）
+TARGET_METRIC = "总盈亏金额"
+# TARGET_METRIC = "策略总回报"
+
+
+def _extract_total_pnl(trades: list[dict]) -> float:
+    """从交易清单中提取最终累计盈亏金额。"""
+    if not trades:
+        return 0.0
+
+    for trade in reversed(trades):
+        cum_pnl = trade.get("cum_pnl")
+        if cum_pnl is not None:
+            return float(cum_pnl)
+    return 0.0
+
+
+def _resolve_target_value(metrics: dict, trades: list[dict]) -> float:
+    """按顶部配置的 TARGET_METRIC 解析当前方案的排序值。"""
+    if TARGET_METRIC == "总盈亏金额":
+        return _extract_total_pnl(trades)
+    if TARGET_METRIC == "策略总回报":
+        return float(metrics.get("策略总回报", 0.0))
+    raise ValueError(f"不支持的 TARGET_METRIC: {TARGET_METRIC}")
 
 
 def _gen_alloc_grid(n_factors: int, max_leverage: float):
@@ -123,7 +145,8 @@ def main():
 
         out = run_backtest(config=cfg)
         metrics = out["metrics"]
-        target_val = float(metrics.get(TARGET_METRIC, 0.0))
+        trades = out.get("trades", [])
+        target_val = _resolve_target_value(metrics, trades)
 
         row: dict = {
             "目标指标": TARGET_METRIC,

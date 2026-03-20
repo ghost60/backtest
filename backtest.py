@@ -118,6 +118,7 @@ def run_backtest(config=None, config_path=None):
     all_trades = []
     # 存储每个因子跑出来的 df（主要为了最后把各因子的 Total_Value 相加）
     factor_results = []
+    total_allocated_capital = 0.0
     
     # 组合级别的初始资金（总计）
     total_initial_capital = capital_params.get("initial_capital", 100000)
@@ -130,6 +131,7 @@ def run_backtest(config=None, config_path=None):
         
         # 该因子分配到的独立初始资金
         allocated_capital = total_initial_capital * alloc_ratio
+        total_allocated_capital += allocated_capital
         
         if factor_type not in FACTOR_REGISTRY:
             raise ValueError(f"不支持的因子类型: {factor_type}，可选: {list(FACTOR_REGISTRY.keys())}")
@@ -207,7 +209,11 @@ def run_backtest(config=None, config_path=None):
     combined_total_value = pd.Series(0.0, index=df_combined.index)
     for f_df in factor_results:
         combined_total_value += f_df["Total_Value"]
-        
+
+    unallocated_cash = max(0.0, total_initial_capital - total_allocated_capital)
+    if unallocated_cash:
+        combined_total_value += unallocated_cash
+
     df_combined["Total_Value"] = combined_total_value
     # 组合的策略真实百分比回报
     df_combined["Strategy_Return"] = df_combined["Total_Value"].pct_change().fillna(0.0)
