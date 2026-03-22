@@ -25,8 +25,16 @@ def _fmt_money_dual(val, currency="USD", fx_to_usd=1.0):
     ccy = str(currency).upper()
     if ccy == "USD":
         return _fmt_money(val, "USD")
+    if fx_to_usd is None or float(fx_to_usd) <= 0:
+        return _fmt_money(val, ccy)
     usd_val = float(val) * float(fx_to_usd)
     return f"{_fmt_money(val, ccy)} (~{_fmt_money(usd_val, 'USD')})"
+
+
+def _fmt_initial_capital(initial_margin, margin_currency="USD", fx_to_usd=1.0):
+    """初始资金口径跟随保证金币种。"""
+    ccy = str(margin_currency).upper()
+    return _fmt_money(initial_margin, ccy)
 
 
 def _fmt_val(key, val):
@@ -131,7 +139,7 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         "",
         "| 参数 | 值 |",
         "| :--- | :--- |",
-        f"| 初始资金 | {_fmt_money(initial, margin_currency)} |",
+        f"| 初始资金 | {_fmt_initial_capital(initial, margin_currency, margin_fx_to_usd)} |",
         f"| 保证金币种 | {margin_currency} |",
         f"| 持仓比例 | {pos_ratio:.0%} |",
         f"| 最大杠杆倍数 | {max_leverage:.2f}x |",
@@ -217,7 +225,7 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
         "",
         "| 参数 | 值 |",
         "| :--- | :--- |",
-        f"| 初始资金 | {_fmt_money(initial, margin_currency)} |",
+        f"| 初始资金 | {_fmt_initial_capital(initial, margin_currency, margin_fx_to_usd)} |",
         f"| 保证金币种 | {margin_currency} |",
         f"| 最大杠杆倍数 | {max_leverage:.2f}x |",
         "",
@@ -252,7 +260,7 @@ def write_markdown_hedge(output_path, start_date, end_date, strategy_params, met
     lines += [
         f"| 总盈亏 (对冲段) | {_fmt_money_dual(total_pnl, margin_currency, margin_fx_to_usd)} |",
         f"| 总收益率 (对冲段) | {total_return_pct:.2f}% |",
-        f"| 初始资金 | {_fmt_money(initial, margin_currency)} |",
+        f"| 初始资金 | {_fmt_initial_capital(initial, margin_currency, margin_fx_to_usd)} |",
         "",
         "### 核心指标",
         "",
@@ -283,8 +291,12 @@ def print_trades(trades):
     money_digits = 2 if ccy == "USD" else 8
 
     print(f"\n===== 交易清单（共 {len(trades)} 笔）=====")
-    print(f"{'交易ID':<8} {'日期':<22} {'操作':<12} {'价格':<10} {'股数':<10} {('仓位价值('+ccy+')'):<20} {'盈亏':<12} {'盈亏(%)':<10} {'累计盈亏':<14} {'累计(%)':<10}")
-    print("-" * 124)
+    print(
+        f"{'交易ID':<8} {'日期':<22} {'操作':<12} {'价格':<10} {'股数':<10} "
+        f"{('仓位价值('+ccy+')'):<20} {'保证金币种':<10} {'保证金价格(USD)':<16} "
+        f"{'盈亏':<12} {'盈亏(%)':<10} {'累计盈亏':<14} {'累计(%)':<10}"
+    )
+    print("-" * 154)
     for trade in [t for t in trades]:
         pnl_str = f"{trade['pnl']:,.{money_digits}f}" if trade['pnl'] is not None else "-"
         pnl_pct_str = f"{trade['pnl_pct']:.2f}%" if trade['pnl_pct'] is not None else "-"
@@ -303,11 +315,15 @@ def print_trades(trades):
             f"{float(pos_margin_val):,.{money_digits}f}"
             if isinstance(pos_margin_val, (int, float)) else str(pos_margin_val)
         )
+        trade_ccy = str(trade.get("margin_currency", ccy)).upper()
+        trade_fx = trade.get("margin_fx_to_usd")
+        trade_fx_str = f"{float(trade_fx):,.2f}" if isinstance(trade_fx, (int, float)) else "-"
 
         print(f"{trade['trade_id']:<8} {str(trade['date']):<22} {trade['action']:<12} "
               f"{trade['price']:<10.2f} {trade['shares']:<10} {pos_margin_str:>20} "
+              f"{trade_ccy:>10} {trade_fx_str:>16} "
               f"{pnl_str:>12} {pnl_pct_str:>10} {cum_pnl_str:>14} {cum_pnl_pct_str:>10}")
-    print("-" * 124)
+    print("-" * 154)
 
 
 def save_trades_csv(trades, output_path):
@@ -317,7 +333,7 @@ def save_trades_csv(trades, output_path):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     trades_df = pd.DataFrame(trades)
-    hidden_cols = ["leverage", "margin_currency", "margin_fx_to_usd", "borrowed", "cash"]
+    hidden_cols = ["leverage", "borrowed", "cash"]
     trades_df = trades_df.drop(columns=[c for c in hidden_cols if c in trades_df.columns], errors="ignore")
     trades_df.to_csv(output_path, index=False, encoding='utf-8-sig')
     print(f"交易清单已保存至: {output_path}")

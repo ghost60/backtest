@@ -8,7 +8,7 @@ data:
   # 主标的 CSV 路径：相对项目根或绝对路径
   path: "data/TSLA_25Y_yFinance.csv"
   # 回测起止日期（包含）
-  start_date: "2011-01-01"
+  start_date: "2020-01-01"
   end_date: "2026-03-04"
 
 # ---------- 策略参数（执行层：与因子无关） ----------
@@ -29,11 +29,17 @@ factor:
 
 # ---------- 资金管理 ----------
 capital:
-  initial: 1000000 # 初始资金（美元）
+  initial: 145.6 # 初始资金
   position_ratio: 1.0 # 持仓比例：1.0 表示全仓，0.5 表示半仓
   max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
+  margin_settlement_mode: "principal_plus_pnl" # 本金 + 美元盈亏折算后的保证金币种，作为下一笔保证金
   margin_currency: "BTC" # 保证金币种：USD / BTC / ETH
-  margin_fx_to_usd: 50000.0 # 1 保证金币种=多少 USD（USD 固定 1；BTC/ETH 需显式配置）
+  margin_fx_source: "binance" # static: 固定汇率；binance: 按时间从币安获取
+  margin_symbol: "BTCUSDT" # 当 margin_fx_source=binance 时使用
+  margin_fx_interval: "1d" # 当 margin_fx_source=binance 时使用
+  margin_fx_debug: false # 是否打印币安请求日志
+  margin_fx_prefetch: true # 启动时批量预拉取整段汇率，减少逐日请求
+  margin_fx_to_usd: 50000.0 # 1 保证金币种=多少 USD（兜底）。当回测早于币安该交易对上线时间时会回退到该值
 
 # ---------- 输出 ----------
 output:

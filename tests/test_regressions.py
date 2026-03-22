@@ -26,6 +26,22 @@ class ConfigLoaderRegressionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_capital_params({"capital": {"initial": 1.0, "margin_currency": "BTC"}})
 
+    def test_get_capital_params_allows_binance_fx_source_without_static_fx(self):
+        params = get_capital_params(
+            {
+                "capital": {
+                    "initial": 1.0,
+                    "margin_currency": "BTC",
+                    "margin_fx_source": "binance",
+                    "margin_symbol": "BTCUSDT",
+                    "margin_fx_interval": "1d",
+                }
+            }
+        )
+        self.assertEqual(params["margin_fx_source"], "binance")
+        self.assertEqual(params["margin_symbol"], "BTCUSDT")
+        self.assertIsNone(params["margin_fx_to_usd"])
+
 
 class MetricsRegressionTests(unittest.TestCase):
     def test_calculate_metrics_prefers_realized_trade_pnl(self):

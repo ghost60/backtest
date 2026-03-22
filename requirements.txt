@@ -3,3 +3,4 @@ numpy>=1.20.0
 matplotlib>=3.4.0
 PyYAML>=5.4.0
 quantstats>=0.0.61
+ccxt>=4.4.0

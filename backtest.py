@@ -21,6 +21,7 @@ from .factor import factor_adx_ma
 from .factor import factor_double_ma_hedge
 from .engine.single_asset import run_single_asset
 from .report.quan_stats_report import generate_qs_report
+from .data.binance_price import BinancePriceClient
 from .config_loader import get_capital_params, get_output_paths, get_strategy_params, get_factor_config, get_hedge_config, load_config, PROJECT_ROOT
 
 # 因子注册表：type -> (module, 计算函数名)，便于按配置调度
@@ -32,6 +33,70 @@ FACTOR_REGISTRY = {
 # 各因子输出的买卖信号列名（当前单/双均线一致，后续可扩展为从因子返回）
 SIGNAL_BUY_COL = "MA_Buy_Signal"
 SIGNAL_SELL_COL = "MA_Sell_Signal"
+
+
+def _build_margin_fx_getter(capital_params, start_date=None, end_date=None):
+    """
+    构建保证金币种兑 USD 汇率获取函数。
+    返回:
+      callable(date_like) -> fx_to_usd
+      或 None（表示使用固定汇率）
+    """
+    margin_currency = str(capital_params.get("margin_currency", "USD")).upper()
+    source = str(capital_params.get("margin_fx_source", "static")).lower()
+    if margin_currency == "USD" or source != "binance":
+        return None
+
+    symbol = str(capital_params.get("margin_symbol", f"{margin_currency}USDT")).upper()
+    interval = str(capital_params.get("margin_fx_interval", "1d"))
+    # 高级连接参数使用内置默认，简化用户配置项
+    timeout_sec = 5
+    retry_times = 2
+    retry_sleep_sec = 0.5
+    fx_debug = bool(capital_params.get("margin_fx_debug", False))
+    fail_fast = True
+    exchanges = ["binance", "binanceus"]
+    fallback_fx = capital_params.get("margin_fx_to_usd")
+    client = BinancePriceClient(
+        interval=interval,
+        timeout_sec=timeout_sec,
+        retry_times=retry_times,
+        retry_sleep_sec=retry_sleep_sec,
+        debug=fx_debug,
+        fail_fast_when_fallback=fail_fast,
+        exchanges=exchanges,
+    )
+    prefetch = bool(capital_params.get("margin_fx_prefetch", True))
+    if prefetch and start_date is not None and end_date is not None:
+        try:
+            loaded = client.prefetch_range(symbol, start_date, end_date)
+            print(
+                f"[margin_fx] 预拉取完成: symbol={symbol}, interval={interval}, "
+                f"loaded={loaded}, range=[{start_date}, {end_date}]"
+            )
+        except Exception as e:
+            print(f"[margin_fx] 预拉取失败，将按需查询: {e}")
+
+    state = {"fallback_warned": False, "fallback_only": False}
+
+    def _getter(ts):
+        if state["fallback_only"]:
+            return float(fallback_fx)
+        try:
+            return float(client.get_price_at(symbol, ts))
+        except Exception:
+            if fallback_fx is not None and float(fallback_fx) > 0:
+                state["fallback_only"] = True
+                if not state["fallback_warned"]:
+                    print(
+                        f"警告: Binance 汇率获取失败，已回退为固定汇率 "
+                        f"{float(fallback_fx):.6f} (symbol={symbol}, interval={interval})"
+                    )
+                    state["fallback_warned"] = True
+                return float(fallback_fx)
+            raise
+
+    return _getter
 
 
 def _print_signals(df, buy_col=SIGNAL_BUY_COL, sell_col=SIGNAL_SELL_COL):
@@ -104,6 +169,7 @@ def run_backtest(config=None, config_path=None):
     end_date = data_cfg.get("end_date")
     strategy_params = get_strategy_params(config)
     capital_params = get_capital_params(config)
+    margin_fx_getter = _build_margin_fx_getter(capital_params, start_date=start_date, end_date=end_date)
     paths = get_output_paths(config)
     out_cfg = config.get("output", {})
 
@@ -159,14 +225,22 @@ def run_backtest(config=None, config_path=None):
         pos_ratio = float(capital_params.get("position_ratio", 1.0))
         max_leverage = float(capital_params.get("max_leverage", 1.0))
         margin_currency = str(capital_params.get("margin_currency", "USD")).upper()
-        margin_fx_to_usd = float(capital_params.get("margin_fx_to_usd", 1.0))
+        margin_fx_source = str(capital_params.get("margin_fx_source", "static")).lower()
+        margin_fx_to_usd = capital_params.get("margin_fx_to_usd")
         max_buy_power_margin = allocated_capital * pos_ratio * max_leverage
-        max_buy_power_usd = max_buy_power_margin * margin_fx_to_usd
+        if margin_currency == "USD":
+            max_buy_power_margin_text = f"{max_buy_power_margin:,.2f} USD"
+        elif margin_fx_to_usd is not None and float(margin_fx_to_usd) > 0:
+            max_buy_power_margin_text = f"{max_buy_power_margin:,.8f} {margin_currency}"
+        elif margin_fx_source == "binance":
+            max_buy_power_margin_text = f"动态({margin_currency})"
+        else:
+            max_buy_power_margin_text = f"N/A {margin_currency}"
         print(
             f"分配资金: {allocated_capital} (占比 {alloc_ratio*100}%)  "
             f"保证金币种: {margin_currency}  "
             f"杠杆上限: {max_leverage:.2f}x  "
-            f"最大可用买入规模: {max_buy_power_margin:,.4f} {margin_currency} (~{max_buy_power_usd:,.0f} USD)"
+            f"最大可用买入规模: {max_buy_power_margin_text}"
         )
         
         # 计算因子信号
@@ -188,7 +262,9 @@ def run_backtest(config=None, config_path=None):
             position_ratio=capital_params.get("position_ratio", 1.0),
             max_leverage=capital_params.get("max_leverage", 1.0),
             margin_currency=capital_params.get("margin_currency", "USD"),
-            margin_fx_to_usd=capital_params.get("margin_fx_to_usd", 1.0),
+            margin_fx_to_usd=capital_params.get("margin_fx_to_usd", 1.0) or 1.0,
+            margin_fx_getter=margin_fx_getter,
+            margin_settlement_mode=capital_params.get("margin_settlement_mode", "principal_plus_pnl"),
             price_col="Open",
         )
         
@@ -286,6 +362,7 @@ def run_hedge_backtest(config=None, config_path=None):
     end_date = data_cfg.get("end_date")
     strategy_params = get_strategy_params(config)
     capital_params = get_capital_params(config)
+    margin_fx_getter = _build_margin_fx_getter(capital_params, start_date=start_date, end_date=end_date)
     paths = get_output_paths(config)
     out_cfg = config.get("output", {})
     hedge_cfg = get_hedge_config(config)
@@ -315,7 +392,12 @@ def run_hedge_backtest(config=None, config_path=None):
                                             **factor_cfg["params"],
                                             entry_delay=strategy_params.get("entry_delay", 0),
                                             exit_delay=strategy_params.get("exit_delay", 0),
-                                            **capital_params,
+                                            initial_capital=capital_params.get("initial_capital", 100000),
+                                            position_ratio=capital_params.get("position_ratio", 1.0),
+                                            max_leverage=capital_params.get("max_leverage", 1.0),
+                                            margin_currency=capital_params.get("margin_currency", "USD"),
+                                            margin_fx_to_usd=capital_params.get("margin_fx_to_usd", 1.0) or 1.0,
+                                            margin_fx_getter=margin_fx_getter,
                                             hedge_names=hedge_names)
 
     # 3. 计算指标

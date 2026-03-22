@@ -163,24 +163,52 @@ def get_capital_params(cfg):
     if margin_currency not in ("USD", "BTC", "ETH"):
         raise ValueError(f"不支持的保证金币种: {margin_currency}，可选: USD, BTC, ETH")
 
+    margin_fx_source = str(c.get("margin_fx_source", "static")).lower()
+    if margin_fx_source not in ("static", "binance"):
+        raise ValueError(f"不支持的汇率来源: {margin_fx_source}，可选: static, binance")
+
     margin_fx_to_usd = c.get("margin_fx_to_usd")
     if margin_currency == "USD":
         margin_fx_to_usd = 1.0 if margin_fx_to_usd is None else float(margin_fx_to_usd)
     else:
-        if margin_fx_to_usd is None:
-            raise ValueError(
-                f"保证金币种为 {margin_currency} 时，必须在 capital.margin_fx_to_usd 中设置该币种兑 USD 汇率。"
-            )
-        margin_fx_to_usd = float(margin_fx_to_usd)
-        if margin_fx_to_usd <= 0:
-            raise ValueError("capital.margin_fx_to_usd 必须大于 0。")
+        if margin_fx_source == "static":
+            if margin_fx_to_usd is None:
+                raise ValueError(
+                    f"保证金币种为 {margin_currency} 且汇率来源为 static 时，"
+                    "必须在 capital.margin_fx_to_usd 中设置该币种兑 USD 汇率。"
+                )
+            margin_fx_to_usd = float(margin_fx_to_usd)
+            if margin_fx_to_usd <= 0:
+                raise ValueError("capital.margin_fx_to_usd 必须大于 0。")
+        else:
+            # binance 模式下允许不提供固定汇率；若提供则作为 API 失败时兜底值
+            margin_fx_to_usd = None if margin_fx_to_usd is None else float(margin_fx_to_usd)
+            if margin_fx_to_usd is not None and margin_fx_to_usd <= 0:
+                raise ValueError("capital.margin_fx_to_usd 必须大于 0。")
+
+    default_symbol = f"{margin_currency}USDT" if margin_currency != "USD" else "USDUSDT"
+    margin_symbol = str(c.get("margin_symbol", default_symbol)).upper()
+    margin_fx_interval = str(c.get("margin_fx_interval", "1d"))
+    # 简化配置：高级连接参数收敛为代码默认值，仅保留常用开关
+    margin_fx_debug = bool(c.get("margin_fx_debug", False))
+    margin_fx_prefetch = bool(c.get("margin_fx_prefetch", True))
+
+    margin_settlement_mode = str(c.get("margin_settlement_mode", "principal_plus_pnl")).lower()
+    if margin_settlement_mode not in ("principal_plus_pnl", "mark_to_market"):
+        raise ValueError("capital.margin_settlement_mode 仅支持 principal_plus_pnl 或 mark_to_market")
 
     return {
         "initial_capital": c.get("initial", 100000),
         "position_ratio": c.get("position_ratio", 1.0),
         "max_leverage": c.get("max_leverage", 1.0),
+        "margin_settlement_mode": margin_settlement_mode,
         "margin_currency": margin_currency,
         "margin_fx_to_usd": margin_fx_to_usd,
+        "margin_fx_source": margin_fx_source,
+        "margin_symbol": margin_symbol,
+        "margin_fx_interval": margin_fx_interval,
+        "margin_fx_debug": margin_fx_debug,
+        "margin_fx_prefetch": margin_fx_prefetch,
     }
 
 

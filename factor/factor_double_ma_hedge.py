@@ -18,7 +18,7 @@ from .factor_double_ma import calculate_double_ma_factors
 
 def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=True,
         entry_delay=0, exit_delay=0, initial_capital=100000, position_ratio=1.0,
-        max_leverage=1.0, margin_currency="USD", margin_fx_to_usd=1.0, hedge_names=None):
+        max_leverage=1.0, margin_currency="USD", margin_fx_to_usd=1.0, margin_fx_getter=None, hedge_names=None):
     """
     运行 Double MA 对冲策略。
 
@@ -71,6 +71,21 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
         raise ValueError("margin_fx_to_usd 必须大于 0。")
     margin_currency = str(margin_currency).upper()
     money_digits = 2 if margin_currency == "USD" else 8
+    last_fx = float(margin_fx_to_usd)
+
+    def _resolve_fx(cur_date):
+        nonlocal last_fx
+        if margin_currency == "USD":
+            return 1.0
+        if margin_fx_getter is not None:
+            try:
+                v = float(margin_fx_getter(cur_date))
+                if v > 0:
+                    last_fx = v
+                    return v
+            except Exception:
+                pass
+        return last_fx
 
     tsla_pos_list = []
     # hedge_pos_matrix[hedge_idx][k_idx]
@@ -83,16 +98,19 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
     trades = []
     trade_id = 0
     
-    # 核心追踪变量
-    current_portfolio_value = initial_capital
+    # 核心追踪变量（约定：initial_capital 配置口径与保证金币种一致）
+    current_portfolio_value = 0.0
     entry_prices = {} 
     
     # 记录初始持仓（策略默认全仓持有对冲标的，成交价使用当根 K 线开盘价 Open）
     if hedge_names:
+        init_fx = _resolve_fx(tsla_df.index[0])
+        initial_capital_margin = float(initial_capital)
+        current_portfolio_value = initial_capital_margin
         for h_idx, h_name in enumerate(hedge_names):
             h_price = hedge_dfs[h_idx]["Open"].iloc[0]
             entry_prices[h_name] = h_price
-            hedge_notional_usd = current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx]
+            hedge_notional_usd = current_portfolio_value * init_fx * position_ratio * weights[h_idx]
             trades.append({
                 "trade_id": 0,
                 "date": tsla_df.index[0],
@@ -100,21 +118,25 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "price": round(h_price, 2),
                 "shares": int(hedge_notional_usd / h_price),
                 "position_value": round(hedge_notional_usd, 2),
-                "position_value_margin": round(hedge_notional_usd / margin_fx_to_usd, money_digits),
+                "position_value_margin": round(hedge_notional_usd / init_fx, money_digits),
                 "cash": round(current_portfolio_value * (1 - position_ratio), money_digits) if h_idx == len(hedge_names)-1 else "-",
                 "margin_currency": margin_currency,
-                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                "margin_fx_to_usd": round(init_fx, 6),
                 "pnl": None,
                 "pnl_pct": None,
                 "cum_pnl": None,
                 "cum_pnl_pct": None
             })
     entry_prices["TSLA"] = tsla_df["Open"].iloc[0]
+    if not hedge_names:
+        initial_capital_margin = float(initial_capital)
+        current_portfolio_value = initial_capital_margin
 
     for i in range(len(tsla_df)):
         date = tsla_df.index[i]
         # 交易价格统一使用当根 K 线的开盘价（与 factor_double_ma.run 一致）
         price = tsla_df["Open"].iloc[i]
+        current_fx = _resolve_fx(date)
 
         # 1. 信号检测：金叉/买入（逻辑与 factor_double_ma.run 保持一致）
         if tsla_position == 0:
@@ -161,12 +183,12 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                         "date": date,
                         "action": f"卖出{h_name}",
                         "price": round(h_price, 2),
-                        "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio * h_weight / h_price),
+                        "shares": int(current_portfolio_value * current_fx * position_ratio * h_weight / h_price),
                         "position_value": 0,
                         "position_value_margin": 0,
                         "cash": "-", # 过程值
                         "margin_currency": margin_currency,
-                        "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                        "margin_fx_to_usd": round(current_fx, 6),
                         "pnl": round(h_pnl, money_digits),
                         "pnl_pct": round(h_ret * 100, 2),
                         "cum_pnl": None,
@@ -183,12 +205,12 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "date": date,
                 "action": "买入TSLA",
                 "price": round(price, 2),
-                "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio / price),
-                "position_value": round(current_portfolio_value * margin_fx_to_usd * position_ratio, 2),
+                "shares": int(current_portfolio_value * current_fx * position_ratio / price),
+                "position_value": round(current_portfolio_value * current_fx * position_ratio, 2),
                 "position_value_margin": round(current_portfolio_value * position_ratio, money_digits),
                 "cash": round(current_portfolio_value * (1 - position_ratio), money_digits),
                 "margin_currency": margin_currency,
-                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                "margin_fx_to_usd": round(current_fx, 6),
                 "pnl": None,
                 "pnl_pct": None,
                 "cum_pnl": None,
@@ -224,7 +246,7 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                 "position_value_margin": 0,
                 "cash": round(current_portfolio_value, money_digits),
                 "margin_currency": margin_currency,
-                "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                "margin_fx_to_usd": round(current_fx, 6),
                 "pnl": round(tsla_pnl, money_digits),
                 "pnl_pct": round(tsla_ret * 100, 2),
                 "cum_pnl": None,
@@ -241,12 +263,12 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
                         "date": date,
                         "action": f"买入{h_name}",
                         "price": round(h_price, 2),
-                        "shares": int(current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx] / h_price),
-                        "position_value": round(current_portfolio_value * margin_fx_to_usd * position_ratio * weights[h_idx], 2),
+                        "shares": int(current_portfolio_value * current_fx * position_ratio * weights[h_idx] / h_price),
+                        "position_value": round(current_portfolio_value * current_fx * position_ratio * weights[h_idx], 2),
                         "position_value_margin": round(current_portfolio_value * position_ratio * weights[h_idx], money_digits),
                         "cash": "-",
                         "margin_currency": margin_currency,
-                        "margin_fx_to_usd": round(margin_fx_to_usd, 6),
+                        "margin_fx_to_usd": round(current_fx, 6),
                         "pnl": None,
                         "pnl_pct": None,
                         "cum_pnl": None,
@@ -285,6 +307,6 @@ def run(tsla_df, hedge_dfs, weights, ma_short=5, ma_long=30, use_price_filter=Tr
         if t["pnl"] is not None:
             cum_pnl += t["pnl"]
             t["cum_pnl"] = round(cum_pnl, 2)
-            t["cum_pnl_pct"] = round(cum_pnl / initial_capital * 100, 2)
+            t["cum_pnl_pct"] = round(cum_pnl / initial_capital_margin * 100, 2) if initial_capital_margin else 0.0
 
     return combined, trades

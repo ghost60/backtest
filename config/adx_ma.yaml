@@ -34,6 +34,9 @@ capital:
   position_ratio: 1.0
   max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
   margin_currency: "USD" # 保证金币种：USD / BTC / ETH
+  margin_fx_source: "static" # static: 固定汇率；binance: 按时间从币安获取
+  margin_symbol: "USDUSDT" # 当 margin_fx_source=binance 时使用
+  margin_fx_interval: "1d" # 当 margin_fx_source=binance 时使用
   margin_fx_to_usd: 1.0 # 1 保证金币种=多少 USD（USD 固定 1；BTC/ETH 需显式配置）
 
 output:

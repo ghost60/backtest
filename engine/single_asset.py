@@ -35,6 +35,8 @@ def run_single_asset(
     max_leverage: float = 1.0,
     margin_currency: str = "USD",
     margin_fx_to_usd: float = 1.0,
+    margin_fx_getter=None,
+    margin_settlement_mode: str = "principal_plus_pnl",
     price_col: str = "Open",
 ) -> Tuple[pd.DataFrame, List[Dict]]:
     """
@@ -72,8 +74,11 @@ def run_single_asset(
     df = df.copy()
     max_leverage = max(1.0, float(max_leverage))
     margin_currency = str(margin_currency).upper()
-    if margin_fx_to_usd <= 0:
+    if margin_fx_to_usd is None or margin_fx_to_usd <= 0:
         raise ValueError("margin_fx_to_usd 必须大于 0。")
+    margin_settlement_mode = str(margin_settlement_mode).lower()
+    if margin_settlement_mode not in ("principal_plus_pnl", "mark_to_market"):
+        raise ValueError("margin_settlement_mode 必须为 principal_plus_pnl 或 mark_to_market。")
     money_digits = 2 if margin_currency == "USD" else 8
 
     position = 0
@@ -82,6 +87,7 @@ def run_single_asset(
     daily_cash: List[float] = []
     daily_shares: List[int] = []
     daily_borrowed: List[float] = []
+    daily_fx_to_usd: List[float] = []
 
     signal_wait = -1       # 金叉后等待的 K 数：-1=无信号，0=信号当根，1=信号后第1根...
     exit_signal_wait = -1  # 死叉后等待的 K 数
@@ -90,11 +96,33 @@ def run_single_asset(
     trade_id = 0
     shares = 0
     borrowed = 0.0
-    cash = float(initial_capital)
+    cash = 0.0
+    last_fx = float(margin_fx_to_usd)
+    entry_fx = last_fx
+    own_invested_margin = 0.0
+
+    def _resolve_fx(cur_date):
+        nonlocal last_fx
+        if margin_currency == "USD":
+            return 1.0
+        if margin_fx_getter is not None:
+            try:
+                v = float(margin_fx_getter(cur_date))
+                if v > 0:
+                    last_fx = v
+                    return v
+            except Exception:
+                pass
+        return last_fx
+
+    # 约定：initial_capital 配置口径与保证金币种一致（如 margin=BTC，则 initial=BTC 数量）
+    initial_capital_margin = float(initial_capital)
+    cash = float(initial_capital_margin)
 
     for i in range(len(df)):
         date = df.index[i]
         price = float(df[price_col].iloc[i])
+        current_fx = _resolve_fx(date)
 
         # 1. 死叉信号检测（仅持仓时计数）
         if bool(sell_signal.iloc[i]):
@@ -109,12 +137,17 @@ def run_single_asset(
             position = 0
 
             sell_proceeds_usd = shares * price
-            # 还贷后剩余归账户现金
-            cash += (sell_proceeds_usd - borrowed) / margin_fx_to_usd
             # pnl = 卖出所得 - 归还借贷 - 自有资金净投入
             own_invested = entry_price * shares - borrowed
             pnl_usd = sell_proceeds_usd - borrowed - own_invested
-            pnl = round(pnl_usd / margin_fx_to_usd, money_digits)
+            pnl = round(pnl_usd / current_fx, money_digits)
+            # 资金结算口径：
+            # - principal_plus_pnl: 返还入场时保证金本金 + 本次美元盈亏折算保证金币种
+            # - mark_to_market: 直接把平仓后美元资产按当时汇率折算
+            if margin_settlement_mode == "principal_plus_pnl":
+                cash += own_invested_margin + (pnl_usd / current_fx)
+            else:
+                cash += (sell_proceeds_usd - borrowed) / current_fx
             pnl_pct = round((price - entry_price) / entry_price * 100, 2) if entry_price != 0 else 0.0
 
             trades.append(
@@ -125,8 +158,12 @@ def run_single_asset(
                     "price": round(price, 2),#卖出价格
                     "shares": shares,#卖出股数
                     "position_value": round(sell_proceeds_usd, 2),#卖出总金额(USD)
-                    "position_value_margin": round(sell_proceeds_usd / margin_fx_to_usd, money_digits),#卖出总金额(保证金币种)
+                    "position_value_margin": round(sell_proceeds_usd / current_fx, money_digits),#卖出总金额(保证金币种)
                     "leverage": round(max_leverage, 2),#杠杆倍数
+                    "margin_currency": margin_currency,
+                    "margin_fx_to_usd": round(current_fx, 6),
+                    "borrowed": round(borrowed / current_fx, money_digits),
+                    "cash": round(cash, money_digits),
                     "pnl": pnl,#本次交易盈亏
                     "pnl_pct": pnl_pct,#本次交易盈亏百分比
                     "cum_pnl": None,#累计盈亏
@@ -135,6 +172,7 @@ def run_single_asset(
             )
             shares = 0
             borrowed = 0.0
+            own_invested_margin = 0.0
 
         # 3. 金叉信号检测（仅空仓时跟踪；持仓时清零）
         if position == 0:
@@ -155,7 +193,7 @@ def run_single_asset(
             entry_price = price
             trade_id += 1
 
-            invest_amount_usd = cash * margin_fx_to_usd * float(position_ratio) * max_leverage
+            invest_amount_usd = cash * current_fx * float(position_ratio) * max_leverage
             shares = int(invest_amount_usd / price) if price > 0 else 0
             if shares == 0:
                 # 资金不足，放弃本次信号
@@ -164,9 +202,11 @@ def run_single_asset(
                 borrowed = 0.0
             else:
                 actual_cost_usd = shares * price
-                own_cash_usd = cash * margin_fx_to_usd
+                own_cash_usd = cash * current_fx
                 borrowed = max(0.0, actual_cost_usd - own_cash_usd)   # 超出自有资金部分(USD)
-                cash -= (actual_cost_usd - borrowed) / margin_fx_to_usd  # 只扣除自有资金(换回保证金币种)
+                own_invested_margin = (actual_cost_usd - borrowed) / current_fx
+                entry_fx = current_fx
+                cash -= own_invested_margin  # 只扣除自有资金(保证金币种)
 
                 # 特殊情况：若同一根 K 线同时出现卖出信号，则视作"当日死叉"，
                 # 在下一根 K 线强制出场
@@ -181,10 +221,11 @@ def run_single_asset(
                     "price": round(price, 2),
                     "shares": shares,
                     "position_value": round(shares * price, 2),  # USD 名义仓位
+                    "position_value_margin": round((shares * price) / current_fx, money_digits),
                     "leverage": round(max_leverage, 2),
                     "margin_currency": margin_currency,
-                    "margin_fx_to_usd": round(margin_fx_to_usd, 6),
-                    "borrowed": round(borrowed / margin_fx_to_usd, money_digits),
+                    "margin_fx_to_usd": round(current_fx, 6),
+                    "borrowed": round(borrowed / current_fx, money_digits),
                     "cash": round(cash, money_digits),
                     "pnl": None,
                     "pnl_pct": None,
@@ -201,6 +242,7 @@ def run_single_asset(
         daily_cash.append(cash)
         daily_shares.append(shares)
         daily_borrowed.append(borrowed)
+        daily_fx_to_usd.append(current_fx)
 
     # 6. 累计盈亏回填
     cum_pnl = 0.0
@@ -208,18 +250,28 @@ def run_single_asset(
         if t["pnl"] is not None:
             cum_pnl += float(t["pnl"])
             t["cum_pnl"] = round(cum_pnl, 2)
-            t["cum_pnl_pct"] = round(cum_pnl / float(initial_capital) * 100, 2) if initial_capital else 0.0
+            t["cum_pnl_pct"] = round(cum_pnl / float(initial_capital_margin) * 100, 2) if initial_capital_margin else 0.0
 
     # 7. 收益率与总资产
     df["Position"] = positions
     df["Portfolio_Cash"] = daily_cash
     df["Portfolio_Shares"] = daily_shares
+    df["Margin_FX_To_USD"] = daily_fx_to_usd
     # 借贷内部以 USD 维护，落表转换为保证金币种，便于和 Cash/Total_Value 一致
-    df["Portfolio_Borrowed"] = [b / margin_fx_to_usd for b in daily_borrowed]
-    df["Total_Value"] = (
-        df["Portfolio_Cash"]
-        + (df["Portfolio_Shares"] * df["Close"] - pd.Series(daily_borrowed, index=df.index)) / margin_fx_to_usd
-    )
+    df["Portfolio_Borrowed"] = [
+        (b / fx) if fx else 0.0
+        for b, fx in zip(daily_borrowed, daily_fx_to_usd)
+    ]
+    df["Total_Value"] = [
+        cash_v + (shares_v * close_v - borrowed_v) / fx_v
+        for cash_v, shares_v, close_v, borrowed_v, fx_v in zip(
+            daily_cash,
+            daily_shares,
+            df["Close"].tolist(),
+            daily_borrowed,
+            daily_fx_to_usd,
+        )
+    ]
     
     df["Market_Return"] = df["Close"].pct_change()
     # 真实百分比收益
