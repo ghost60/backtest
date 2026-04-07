@@ -3,6 +3,7 @@ import unittest
 import pandas as pd
 
 from config_loader import get_capital_params, get_factor_config, load_config
+from engine.single_asset import run_single_asset
 from report import metrics
 
 
@@ -93,6 +94,55 @@ class MetricsRegressionTests(unittest.TestCase):
         self.assertIn("最大交易回撤", result)
         # 连续亏损段口径：[-5%, -2%, +3%, -6%] -> max(7%, 6%) = 7%，回撤按负值返回
         self.assertAlmostEqual(result["最大交易回撤"], -0.07, places=8)
+
+
+class MarginSettlementRegressionTests(unittest.TestCase):
+    def test_non_usd_margin_keeps_coin_principal_and_adds_pnl_in_coin(self):
+        idx = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"])
+        df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.0, 110.0, 100.0, 100.0],
+                "Close": [100.0, 100.0, 110.0, 100.0, 100.0],
+            },
+            index=idx,
+        )
+        buy_signal = pd.Series([True, False, False, True, False], index=idx)
+        sell_signal = pd.Series([False, True, False, False, False], index=idx)
+        fx_map = {
+            idx[0]: 10_000.0,
+            idx[1]: 20_000.0,
+            idx[2]: 20_000.0,
+            idx[3]: 20_000.0,
+            idx[4]: 20_000.0,
+        }
+
+        _, trades = run_single_asset(
+            df=df,
+            buy_signal=buy_signal,
+            sell_signal=sell_signal,
+            entry_delay=0,
+            exit_delay=0,
+            initial_capital=1.0,
+            position_ratio=1.0,
+            max_leverage=1.0,
+            margin_currency="BTC",
+            margin_fx_to_usd=10_000.0,
+            margin_fx_getter=lambda dt: fx_map[dt],
+            margin_settlement_mode="principal_plus_pnl",
+        )
+
+        self.assertEqual(len(trades), 3)
+        buy_trade, sell_trade, second_buy_trade = trades
+
+        self.assertEqual(buy_trade["action"], "买入")
+        self.assertEqual(sell_trade["action"], "卖出")
+        self.assertEqual(second_buy_trade["action"], "买入")
+        self.assertEqual(buy_trade["shares"], 100)
+        # 非 USD 保证金下，1 BTC 本金始终保留；本次 1,000 USD 利润按平仓汇率折算成 0.05 BTC。
+        self.assertAlmostEqual(sell_trade["cash"], 1.05, places=8)
+        self.assertAlmostEqual(sell_trade["pnl"], 0.05, places=8)
+        # 下一次买入可继续用 1.05 BTC 作为抵押，按买入时汇率折算出等值 USD 名义仓位。
+        self.assertEqual(second_buy_trade["shares"], 210)
 
 
 if __name__ == "__main__":

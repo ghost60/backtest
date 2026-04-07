@@ -79,6 +79,7 @@ def run_single_asset(
     margin_settlement_mode = str(margin_settlement_mode).lower()
     if margin_settlement_mode not in ("principal_plus_pnl", "mark_to_market"):
         raise ValueError("margin_settlement_mode 必须为 principal_plus_pnl 或 mark_to_market。")
+    use_coin_as_collateral = margin_currency != "USD"
     money_digits = 2 if margin_currency == "USD" else 8
 
     position = 0
@@ -142,9 +143,11 @@ def run_single_asset(
             pnl_usd = sell_proceeds_usd - borrowed - own_invested
             pnl = round(pnl_usd / current_fx, money_digits)
             # 资金结算口径：
-            # - principal_plus_pnl: 返还入场时保证金本金 + 本次美元盈亏折算保证金币种
-            # - mark_to_market: 直接把平仓后美元资产按当时汇率折算
-            if margin_settlement_mode == "principal_plus_pnl":
+            # - 非 USD 保证金：始终持有币，仅将本次净利润/亏损按平仓汇率折回保证金币种
+            # - USD 保证金：按既有配置选择 principal_plus_pnl / mark_to_market
+            if use_coin_as_collateral:
+                cash += pnl_usd / current_fx
+            elif margin_settlement_mode == "principal_plus_pnl":
                 cash += own_invested_margin + (pnl_usd / current_fx)
             else:
                 cash += (sell_proceeds_usd - borrowed) / current_fx
@@ -164,6 +167,7 @@ def run_single_asset(
                     "margin_fx_to_usd": round(current_fx, 6),
                     "borrowed": round(borrowed / current_fx, money_digits),
                     "cash": round(cash, money_digits),
+                    "pnl_usd": round(pnl_usd, 2),
                     "pnl": pnl,#本次交易盈亏
                     "pnl_pct": pnl_pct,#本次交易盈亏百分比
                     "cum_pnl": None,#累计盈亏
@@ -193,6 +197,8 @@ def run_single_asset(
             entry_price = price
             trade_id += 1
 
+            # 非 USD 保证金下，cash 表示始终持有的保证金币数量；
+            # 买入时仅以其当下估值换算出可借入的 USD 名义仓位。
             invest_amount_usd = cash * current_fx * float(position_ratio) * max_leverage
             shares = int(invest_amount_usd / price) if price > 0 else 0
             if shares == 0:
@@ -203,10 +209,15 @@ def run_single_asset(
             else:
                 actual_cost_usd = shares * price
                 own_cash_usd = cash * current_fx
-                borrowed = max(0.0, actual_cost_usd - own_cash_usd)   # 超出自有资金部分(USD)
-                own_invested_margin = (actual_cost_usd - borrowed) / current_fx
+                if use_coin_as_collateral:
+                    borrowed = actual_cost_usd
+                    own_invested_margin = 0.0
+                else:
+                    borrowed = max(0.0, actual_cost_usd - own_cash_usd)   # 超出自有资金部分(USD)
+                    own_invested_margin = (actual_cost_usd - borrowed) / current_fx
                 entry_fx = current_fx
-                cash -= own_invested_margin  # 只扣除自有资金(保证金币种)
+                if not use_coin_as_collateral:
+                    cash -= own_invested_margin  # USD 保证金时只扣除自有资金
 
                 # 特殊情况：若同一根 K 线同时出现卖出信号，则视作"当日死叉"，
                 # 在下一根 K 线强制出场
@@ -227,6 +238,7 @@ def run_single_asset(
                     "margin_fx_to_usd": round(current_fx, 6),
                     "borrowed": round(borrowed / current_fx, money_digits),
                     "cash": round(cash, money_digits),
+                    "pnl_usd": None,
                     "pnl": None,
                     "pnl_pct": None,
                     "cum_pnl": None,

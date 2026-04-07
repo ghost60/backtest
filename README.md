@@ -60,7 +60,7 @@ backtest/
 | `output.dir` | 结果输出目录 |
 | `output.chart_filename` / `metrics_filename` | 图表与报告文件名 |
 | `capital.margin_currency` | 保证金币种：`USD / BTC / ETH` |
-| `capital.margin_settlement_mode` | 保证金结算口径：`principal_plus_pnl`（默认）/ `mark_to_market` |
+| `capital.margin_settlement_mode` | 保证金结算口径：`principal_plus_pnl`（默认）/ `mark_to_market`。仅 `USD` 保证金生效；非 `USD` 时固定按“持币作抵押、仅把盈亏折回币”结算 |
 | `capital.margin_fx_source` | 汇率来源：`static / binance` |
 | `capital.margin_symbol` / `margin_fx_interval` | 当 `binance` 时的交易对与K线周期（如 `BTCUSDT`, `1d`） |
 | `capital.margin_fx_debug` / `margin_fx_prefetch` | 是否打印请求日志、是否启动预拉取 |

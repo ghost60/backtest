@@ -32,7 +32,7 @@ capital:
   initial: 145.6 # 初始资金
   position_ratio: 1.0 # 持仓比例：1.0 表示全仓，0.5 表示半仓
   max_leverage: 1.0 # 最大杠杆倍数：1.0 不使用杠杆，2.0 表示两倍杠杆
-  margin_settlement_mode: "principal_plus_pnl" # 本金 + 美元盈亏折算后的保证金币种，作为下一笔保证金
+  margin_settlement_mode: "principal_plus_pnl" # 仅 USD 保证金生效；非 USD 时固定按“持币作抵押、仅把盈亏折回币”结算
   margin_currency: "BTC" # 保证金币种：USD / BTC / ETH
   margin_fx_source: "binance" # static: 固定汇率；binance: 按时间从币安获取
   margin_symbol: "BTCUSDT" # 当 margin_fx_source=binance 时使用

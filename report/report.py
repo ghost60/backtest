@@ -333,7 +333,7 @@ def save_trades_csv(trades, output_path):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     trades_df = pd.DataFrame(trades)
-    hidden_cols = ["leverage", "borrowed", "cash"]
+    hidden_cols = ["leverage", "borrowed"]
     trades_df = trades_df.drop(columns=[c for c in hidden_cols if c in trades_df.columns], errors="ignore")
     trades_df.to_csv(output_path, index=False, encoding='utf-8-sig')
     print(f"交易清单已保存至: {output_path}")
