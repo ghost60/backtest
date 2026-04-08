@@ -4,6 +4,7 @@ import pandas as pd
 
 from config_loader import get_capital_params, get_factor_config, load_config
 from engine.single_asset import run_single_asset
+from factor.factor_btcdom import run as run_btcdom_replica
 from report import metrics
 
 
@@ -143,6 +144,41 @@ class MarginSettlementRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(sell_trade["pnl"], 0.05, places=8)
         # 下一次买入可继续用 1.05 BTC 作为抵押，按买入时汇率折算出等值 USD 名义仓位。
         self.assertEqual(second_buy_trade["shares"], 210)
+
+
+class BtcdomReplicaRegressionTests(unittest.TestCase):
+    def test_btcdom_replica_combines_long_btc_and_short_alt_basket(self):
+        idx = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
+        btc_df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.0, 110.0],
+                "Close": [100.0, 110.0, 121.0],
+            },
+            index=idx,
+        )
+        alt_df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.0, 90.0],
+                "Close": [100.0, 90.0, 81.0],
+            },
+            index=idx,
+        )
+
+        result, trades = run_btcdom_replica(
+            btc_df,
+            [alt_df],
+            [1.0],
+            initial_capital=100.0,
+            long_weight=0.5,
+            short_weight=0.5,
+            alt_names=["ALT"],
+        )
+
+        self.assertAlmostEqual(result.loc[idx[1], "Strategy_Return"], 0.10, places=8)
+        self.assertAlmostEqual(result.loc[idx[2], "Strategy_Return"], 0.10, places=8)
+        self.assertAlmostEqual(result.loc[idx[2], "Total_Value"], 121.0, places=8)
+        self.assertEqual(trades[-1]["action"], "平仓BTCDOM组合")
+        self.assertAlmostEqual(trades[-1]["pnl"], 21.0, places=8)
 
 
 if __name__ == "__main__":

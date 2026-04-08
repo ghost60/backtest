@@ -17,6 +17,7 @@ Double MA 因子计算模块
 
 import pandas as pd
 
+
 def calculate_double_ma_factors(
     df: pd.DataFrame,
     ma_short: int = 5,

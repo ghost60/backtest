@@ -68,6 +68,12 @@ backtest/
 
 > 说明：`margin_fx_source=binance` 通过 `ccxt` 获取历史/最新价格，请先安装依赖。
 
+## BTCDOM 复刻
+
+- 如果你要复刻“50% 做多 BTC + 50% 做空山寨币篮子”的 BTCDOM 风格组合，使用 [config/btcdom_replica.yaml]
+- 其中 `data.path` 是 BTC 数据，`hedge.symbols` 是做空篮子，`btcdom.long_weight` / `btcdom.short_weight` 控制多空权重。
+- 当前实现是固定权重、按日再平衡的组合复刻，不包含额外择时信号。
+
 ## 扩展建议
 
 - **多标的 / 对冲**: 在 `config` 中增加 `symbols`、`hedge` 等，在 `backtest.py` 中根据配置分支调用不同策略（如现有 `5_30_backtest_tsla_azo.py` 中的对冲逻辑可抽成 `strategy_hedge.py`）。

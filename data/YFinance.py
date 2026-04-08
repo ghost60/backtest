@@ -1,8 +1,7 @@
 import yfinance as yf
 import time
 
-# stock_list = ['AMGN', 'AZO', 'WMT', 'WM', 'GLD', 'TLT']
-stock_list = ['TSLA', 'AZO', 'ORLY', '^GSPC'] #^GSPC is the S&P 500 index
+stock_list = ['TSLA', 'AZO', 'ORLY', '^GSPC', 'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD'] #^GSPC is the S&P 500 index
 
 period_ = "25Y"
 

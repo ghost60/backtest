@@ -1,0 +1,48 @@
+# ============================================================
+# BTCDOM 风格复刻配置
+# 逻辑：
+# - 主标的 path 作为做多腿（通常填 BTC）
+# - hedge.symbols 作为做空山寨币篮子
+# - 每日按 long_weight / short_weight 固定权重再平衡
+# ============================================================
+
+data:
+  path: "data/BTC-USD_25Y_yFinance.csv"
+  start_date: "2021-06-21"
+  end_date: "2026-04-01"
+
+strategy:
+  name: "btcdom_replica"
+  entry_delay: 0
+  exit_delay: 0
+
+btcdom:
+  long_weight: 0.5
+  short_weight: 0.5
+
+capital:
+  initial: 100000
+  position_ratio: 1.0
+  max_leverage: 1.0
+  margin_currency: "USD"
+  margin_fx_source: "static"
+  margin_fx_to_usd: 1.0
+
+hedge:
+  enabled: true
+  symbols:
+    - name: "ETH"
+      path: "data/ETH-USD_25Y_yFinance.csv"
+      weight: 0.4
+    - name: "SOL"
+      path: "data/SOL-USD_25Y_yFinance.csv"
+      weight: 0.3
+    - name: "XRP"
+      path: "data/XRP-USD_25Y_yFinance.csv"
+      weight: 0.3
+
+output:
+  dir: "result"
+  chart_filename: "backtest_results_btcdom_replica.png"
+  metrics_filename: "backtest_metrics_btcdom_replica.md"
+  chart_figsize: [12, 10]

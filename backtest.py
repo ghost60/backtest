@@ -19,6 +19,7 @@ from . import data_loader
 from .factor import factor_double_ma
 from .factor import factor_adx_ma
 from .factor import factor_double_ma_hedge
+from .factor import factor_btcdom
 from .engine.single_asset import run_single_asset
 from .report.quan_stats_report import generate_qs_report
 from .data.binance_price import BinancePriceClient
@@ -97,6 +98,12 @@ def _build_margin_fx_getter(capital_params, start_date=None, end_date=None):
             raise
 
     return _getter
+
+
+def _ensure_file_exists(path_str, label):
+    """校验文件存在，给出更明确的配置报错。"""
+    if not path_str or not os.path.isfile(path_str):
+        raise FileNotFoundError(f"{label}不存在: {path_str}")
 
 
 def _print_signals(df, buy_col=SIGNAL_BUY_COL, sell_col=SIGNAL_SELL_COL):
@@ -435,3 +442,108 @@ def run_hedge_backtest(config=None, config_path=None):
                                      output_path=qs_report_path, title=f"对冲回测报告 ({paths['config_name']})")
 
     return {"metrics": result_metrics, "df_clean": df_clean, "config": config}
+
+
+def run_btcdom_backtest(config=None, config_path=None):
+    """
+    执行 BTCDOM 风格组合回测：
+    做多主标的 BTC，做空一篮子山寨币。
+    """
+    if config is None:
+        config = load_config(config_path)
+
+    resolved = config.get("_resolved", {})
+    btc_path = resolved.get("data_path")
+    data_cfg = config.get("data", {})
+    start_date = data_cfg.get("start_date")
+    end_date = data_cfg.get("end_date")
+    strategy_params = get_strategy_params(config)
+    capital_params = get_capital_params(config)
+    paths = get_output_paths(config)
+    out_cfg = config.get("output", {})
+    hedge_cfg = get_hedge_config(config)
+
+    if not hedge_cfg["enabled"] or not hedge_cfg.get("symbols"):
+        raise ValueError("BTCDOM 复刻需要在 hedge.symbols 中配置做空山寨币篮子。")
+
+    btcdom_cfg = config.get("btcdom", {}) or {}
+    long_weight = float(btcdom_cfg.get("long_weight", 0.5))
+    short_weight = float(btcdom_cfg.get("short_weight", 0.5))
+
+    _ensure_file_exists(btc_path, "BTC 主标的数据文件")
+    print("正在加载 BTC 数据...")
+    btc_df = data_loader.load_data(btc_path, start_date=start_date, end_date=end_date)
+
+    alt_dfs = []
+    alt_names = []
+    weights = []
+    for s in hedge_cfg["symbols"]:
+        _ensure_file_exists(s["path"], f"山寨币篮子数据文件[{s['name']}]")
+        print(f"正在加载山寨币篮子数据: {s['name']} ({s['path']})")
+        alt_dfs.append(data_loader.load_data(s["path"], start_date=start_date, end_date=end_date))
+        alt_names.append(s["name"])
+        weights.append(s["weight"])
+
+    print("正在运行 BTCDOM 复刻策略...")
+    df_combined, trades = factor_btcdom.run(
+        btc_df,
+        alt_dfs,
+        weights,
+        initial_capital=capital_params.get("initial_capital", 100000),
+        long_weight=long_weight,
+        short_weight=short_weight,
+        alt_names=alt_names,
+    )
+
+    print("正在计算指标...")
+    df_clean = df_combined.dropna().copy()
+    df_clean = metrics.calculate_equity(df_clean)
+    result_metrics = metrics.calculate_metrics(df_clean, trades=trades)
+
+    report.print_metrics(result_metrics, title="BTCDOM 复刻策略表现报告")
+
+    out_dir = paths["output_dir"]
+    os.makedirs(out_dir, exist_ok=True)
+    trades_csv_path = os.path.join(out_dir, paths["trades_filename"])
+    report.save_trades_csv(trades, trades_csv_path)
+    md_path = os.path.join(out_dir, paths["metrics_filename"])
+    factor_config = {
+        "type": "btcdom_replica",
+        "params": {
+            "long_weight": long_weight,
+            "short_weight": short_weight,
+            "alt_basket": ",".join(alt_names),
+        },
+        "capital_alloc": 1.0,
+    }
+    report.write_markdown(
+        md_path,
+        start_date,
+        end_date,
+        strategy_params,
+        result_metrics,
+        capital_params=capital_params,
+        trades=trades,
+        factor_config=factor_config,
+        title_suffix="(BTCDOM Replica)",
+    )
+
+    charts.apply_style(out_cfg.get("font_sans_serif"))
+    chart_path = os.path.join(out_dir, paths["chart_filename"])
+    charts.generate_charts(
+        df_clean,
+        chart_path,
+        figsize=tuple(out_cfg.get("chart_figsize", [12, 10])),
+        strategy_label="BTCDOM 复刻",
+        benchmark_label="BTC 持有",
+    )
+
+    qs_report_path = os.path.join(out_dir, paths["qs_report_filename"])
+    generate_qs_report(
+        df_clean["Strategy_Return"],
+        benchmark=df_clean["Market_Return"],
+        output_path=qs_report_path,
+        title=f"BTCDOM 复刻报告 ({paths['config_name']})",
+    )
+
+    return {"metrics": result_metrics, "df_clean": df_clean, "config": config, "trades": trades}

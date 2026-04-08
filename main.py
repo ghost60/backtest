@@ -26,19 +26,23 @@ def main():
     # config_path = "config/hedge_azo_orly.yaml"
     # config_path = "config/adx_ma.yaml"
     # config_path = "config/multi_factor.yaml"
-    config_path = args.config
+    config_path = "config/btcdom_replica.yaml"
+    # config_path = args.config
     # -----------------------
 
     from backtest.config_loader import load_config, get_hedge_config
-    from backtest.backtest import run_backtest, run_hedge_backtest
+    from backtest.backtest import run_backtest, run_hedge_backtest, run_btcdom_backtest
 
     config = load_config(config_path)
-    # hedge_cfg = get_hedge_config(config)
+    strategy_name = str((config.get("strategy") or {}).get("name", "")).lower()
+    hedge_cfg = get_hedge_config(config)
 
-    # if hedge_cfg.get("enabled"):
-    # run_hedge_backtest(config=config)
+    # if strategy_name == "btcdom_replica":
+    run_btcdom_backtest(config=config)  
+    # elif hedge_cfg.get("enabled"):
+    #     run_hedge_backtest(config=config)
     # else:
-    run_backtest(config=config)
+    #     run_backtest(config=config)
 
 
 if __name__ == "__main__":
