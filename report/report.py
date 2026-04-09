@@ -65,7 +65,10 @@ def print_metrics(metrics, title="策略表现报告 (STRATEGY PERFORMANCE REPOR
 
 
 def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
-                   capital_params=None, trades=None, factor_config=None, title_suffix=""):
+                   capital_params=None, trades=None, factor_config=None, title_suffix="",
+                   trade_money_currency=None, initial_equity_value=None, final_equity_value=None,
+                   summary_pnl_value=None, summary_final_asset_value=None, summary_display_currency=None,
+                   summary_fx_to_usd=None):
     """
     将回测周期、策略参数、核心指标写入 Markdown 文件。
 
@@ -100,6 +103,10 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
     max_leverage = capital_params.get("max_leverage", 1.0) if capital_params else 1.0
     margin_currency = capital_params.get("margin_currency", "USD") if capital_params else "USD"
     margin_fx_to_usd = capital_params.get("margin_fx_to_usd", 1.0) if capital_params else 1.0
+    pnl_currency = str(trade_money_currency or margin_currency).upper()
+    pnl_fx_to_usd = 1.0 if pnl_currency == "USD" else margin_fx_to_usd
+    summary_currency = str(summary_display_currency or pnl_currency).upper()
+    summary_fx = pnl_fx_to_usd if summary_fx_to_usd is None else summary_fx_to_usd
     entry_delay = strategy_params.get("entry_delay", 0)
     exit_delay = strategy_params.get("exit_delay", 0)
     param_rows = [
@@ -127,8 +134,15 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
     total_return_pct = 0
     if trades:
         last_trade = trades[-1]
-        total_pnl = last_trade.get("cum_pnl", 0) or 0
+        total_pnl = (
+            last_trade.get("cum_pnl_usd", 0) if pnl_currency == "USD"
+            else last_trade.get("cum_pnl", 0)
+        ) or 0
         total_return_pct = last_trade.get("cum_pnl_pct", 0) or 0
+    pnl_initial_value = initial if initial_equity_value is None else initial_equity_value
+    pnl_final_value = (pnl_initial_value + total_pnl) if final_equity_value is None else final_equity_value
+    display_total_pnl = total_pnl if summary_pnl_value is None else summary_pnl_value
+    display_final_asset = pnl_final_value if summary_final_asset_value is None else summary_final_asset_value
 
     lines = [
         "# 策略回测表现报告" + (" " + title_suffix if title_suffix else ""),
@@ -156,9 +170,9 @@ def write_markdown(output_path, start_date, end_date, strategy_params, metrics,
         "",
         "| 指标 | 数值 |说明|",
         "| :--- | :--- |:---|",
-        f"| 总盈亏 | {_fmt_money_dual(total_pnl, margin_currency, margin_fx_to_usd)} | 基于每笔实际成交价与股数累计的盈亏金额 |",
+        f"| 总盈亏 | {_fmt_money_dual(display_total_pnl, summary_currency, summary_fx)} | 基于每笔实际成交价与股数累计的盈亏金额 |",
         f"| 总收益率(成交口径) | {total_return_pct:.2f}% | 总盈亏 / 初始资金，仅按交易结果计算 |",
-        f"| 最终资产 | {_fmt_money_dual(initial + total_pnl, margin_currency, margin_fx_to_usd)} | 初始资金 + 总盈亏 |",
+        f"| 最终资产 | {_fmt_money_dual(display_final_asset, summary_currency, summary_fx)} | 初始资金 + 总盈亏 |",
         "",
         "### 核心指标（基于净值曲线）",
         "",

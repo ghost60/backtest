@@ -129,12 +129,16 @@ def calculate_metrics(df, trades=None):
     if trades:
         realized_trades = [
             t for t in trades
-            if t.get("action") == "卖出" and t.get("pnl") is not None
+            if t.get("action") == "卖出" and (t.get("pnl") is not None or t.get("pnl_usd") is not None)
         ]
 
     if realized_trades:
         n_trades = len(realized_trades)
-        n_win = sum(1 for t in realized_trades if float(t["pnl"]) > 0)
+        n_win = sum(
+            1
+            for t in realized_trades
+            if float(t["pnl"] if t.get("pnl") is not None else t.get("pnl_usd", 0)) > 0
+        )
     else:
         pos = df["Position"]
         group = (pos != pos.shift()).cumsum()

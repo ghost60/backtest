@@ -664,6 +664,29 @@ def run_unified_account_backtest(config=None, config_path=None):
         trades=trades,
         factor_config=factor_cfg,
         title_suffix="(Unified Account Simple)",
+        trade_money_currency="USD",
+        initial_equity_value=float(collateral_price_usd.iloc[0]) * float(capital_params.get("initial_capital", 100000))
+        if str(capital_params.get("margin_currency", "USD")).upper() == "BTC"
+        else float(capital_params.get("initial_capital", 100000)),
+        final_equity_value=float(df_clean["Total_Value"].iloc[-1]) if len(df_clean) else None,
+        summary_pnl_value=(
+            float(df_clean["Cash_BTC"].iloc[-1]) - float(capital_params.get("initial_capital", 100000))
+            if len(df_clean) and str(capital_params.get("margin_currency", "USD")).upper() == "BTC"
+            else None
+        ),
+        summary_final_asset_value=(
+            float(df_clean["Cash_BTC"].iloc[-1])
+            if len(df_clean) and str(capital_params.get("margin_currency", "USD")).upper() == "BTC"
+            else None
+        ),
+        summary_display_currency=(
+            "BTC" if str(capital_params.get("margin_currency", "USD")).upper() == "BTC" else "USD"
+        ),
+        summary_fx_to_usd=(
+            float(df_clean["Collateral_Price_USD"].iloc[-1])
+            if len(df_clean) and str(capital_params.get("margin_currency", "USD")).upper() == "BTC"
+            else 1.0
+        ),
     )
 
     charts.apply_style(out_cfg.get("font_sans_serif"))

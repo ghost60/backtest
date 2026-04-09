@@ -7,7 +7,7 @@
 - 单标的交易（如 TSLA）
 - 账户同时支持持有 USD / BTC 两类现金资产
 - BTC 仅作为抵押物，不因开仓而减少
-- 买入标的时通过借入 USD 建仓；平仓时先还债，利润/亏损留在 cash_usd
+- 买入标的时通过借入 USD 建仓；平仓时先还债，再将净额按当日价格并回 BTC
 - 为了保持模型简单稳定，BTC/USD 资产切换仅允许在空仓时发生
 
 状态变量（统一按 USD 计算账户净值）：
@@ -60,6 +60,7 @@ def run_unified_account_simple(
     initial_margin_currency = str(initial_margin_currency).upper()
     if initial_margin_currency not in ("USD", "BTC"):
         raise ValueError("initial_margin_currency 仅支持 USD 或 BTC。")
+    settle_to_btc = initial_margin_currency == "BTC"
 
     if debt_limit_ratio <= 0:
         raise ValueError("debt_limit_ratio 必须大于 0。")
@@ -159,8 +160,14 @@ def run_unified_account_simple(
             position = 0
             sell_proceeds_usd = shares * price
             pnl_usd = sell_proceeds_usd - debt_usd
-            cash_usd += sell_proceeds_usd - debt_usd
-            post_sell_equity_usd = cash_usd + cash_btc * btc_price
+            net_usd = sell_proceeds_usd - debt_usd
+            if settle_to_btc:
+                cash_btc += (cash_usd + net_usd) / btc_price
+                cash_usd = 0.0
+                post_sell_equity_usd = cash_btc * btc_price
+            else:
+                cash_usd += net_usd
+                post_sell_equity_usd = cash_usd + cash_btc * btc_price
             trades.append(
                 {
                     "trade_id": trade_id,
@@ -173,9 +180,11 @@ def run_unified_account_simple(
                     "cash_btc": round(cash_btc, 8),
                     "debt_usd": 0.0,
                     "equity_usd": round(post_sell_equity_usd, 2),
+                    "pnl": round(pnl_usd, 2),
                     "pnl_usd": round(pnl_usd, 2),
                     "pnl_pct": round((price - entry_price) / entry_price * 100, 2) if entry_price else 0.0,
                     "cum_pnl": None,
+                    "cum_pnl_usd": None,
                     "cum_pnl_pct": None,
                 }
             )
@@ -212,9 +221,11 @@ def run_unified_account_simple(
                         "cash_btc": round(cash_btc, 8),
                         "debt_usd": round(debt_usd, 2),
                         "equity_usd": round(_equity_usd(price, btc_price), 2),
+                        "pnl": None,
                         "pnl_usd": None,
                         "pnl_pct": None,
                         "cum_pnl": None,
+                        "cum_pnl_usd": None,
                         "cum_pnl_pct": None,
                     }
                 )
@@ -240,6 +251,7 @@ def run_unified_account_simple(
         if t.get("pnl_usd") is not None:
             cum_pnl += float(t["pnl_usd"])
             t["cum_pnl"] = round(cum_pnl, 2)
+            t["cum_pnl_usd"] = round(cum_pnl, 2)
             t["cum_pnl_pct"] = round(cum_pnl / initial_equity_usd * 100, 2) if initial_equity_usd else 0.0
 
     df["Position"] = positions
