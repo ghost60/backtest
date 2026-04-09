@@ -4,6 +4,7 @@ import pandas as pd
 
 from config_loader import get_capital_params, get_factor_config, load_config
 from engine.single_asset import run_single_asset
+from engine.unified_account_simple import run_unified_account_simple
 from factor.factor_btcdom import run as run_btcdom_replica
 from report import metrics
 
@@ -179,6 +180,66 @@ class BtcdomReplicaRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(result.loc[idx[2], "Total_Value"], 121.0, places=8)
         self.assertEqual(trades[-1]["action"], "平仓BTCDOM组合")
         self.assertAlmostEqual(trades[-1]["pnl"], 21.0, places=8)
+
+
+class UnifiedAccountSimpleRegressionTests(unittest.TestCase):
+    def test_unified_account_uses_btc_as_collateral_without_spending_it(self):
+        idx = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
+        df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.0, 110.0],
+                "Close": [100.0, 110.0, 110.0],
+            },
+            index=idx,
+        )
+        btc_price = pd.Series([10_000.0, 10_000.0, 20_000.0], index=idx)
+
+        result, trades = run_unified_account_simple(
+            df=df,
+            buy_signal=pd.Series([True, False, False], index=idx),
+            sell_signal=pd.Series([False, True, False], index=idx),
+            collateral_price_usd=btc_price,
+            initial_capital=1.0,
+            initial_margin_currency="BTC",
+            position_ratio=1.0,
+            max_leverage=1.0,
+            debt_limit_ratio=1.0,
+        )
+
+        self.assertEqual(len(trades), 2)
+        self.assertEqual(trades[0]["action"], "买入")
+        self.assertEqual(trades[1]["action"], "卖出")
+        self.assertEqual(trades[0]["shares"], 100)
+        self.assertAlmostEqual(result.loc[idx[1], "Cash_BTC"], 1.0, places=8)
+        self.assertAlmostEqual(result.loc[idx[1], "Cash_USD"], 0.0, places=8)
+        self.assertAlmostEqual(result.loc[idx[2], "Cash_USD"], 1000.0, places=8)
+        self.assertAlmostEqual(result.loc[idx[2], "Total_Value"], 21_000.0, places=8)
+
+    def test_unified_account_only_switches_collateral_when_flat(self):
+        idx = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"])
+        df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.0, 100.0, 100.0],
+                "Close": [100.0, 100.0, 100.0, 100.0],
+            },
+            index=idx,
+        )
+        btc_price = pd.Series([10_000.0, 12_000.0, 12_000.0, 12_000.0], index=idx)
+        hold_btc = pd.Series([True, False, False, False], index=idx)
+
+        _, trades = run_unified_account_simple(
+            df=df,
+            buy_signal=pd.Series([True, False, False, False], index=idx),
+            sell_signal=pd.Series([False, True, False, False], index=idx),
+            collateral_price_usd=btc_price,
+            initial_capital=1.0,
+            initial_margin_currency="BTC",
+            collateral_hold_btc=hold_btc,
+            log_switches=True,
+        )
+
+        actions = [t["action"] for t in trades]
+        self.assertEqual(actions, ["买入", "卖出", "切换统一账户为USD抵押"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+# ============================================================
+# Double MA + 最简统一账户 示例配置
+# 说明：
+# - 初始 BTC 只作为抵押物，不因买入 TSLA 而减少
+# - 买入 TSLA 时借 USD 建仓，平仓时先还债
+# - 若启用 margin_timing，则 BTC/USD 抵押资产切换仅在空仓时发生
+# ============================================================
+
+data:
+  path: "data/TSLA_25Y_yFinance.csv"
+  start_date: "2020-01-01"
+  end_date: "2026-03-04"
+
+strategy:
+  name: "double_ma_unified_account"
+  entry_delay: 0
+  exit_delay: 0
+
+factor:
+  type: double_ma
+  params:
+    ma_short: 5
+    ma_long: 30
+    use_price_filter: true
+
+capital:
+  initial: 145.6
+  position_ratio: 1.0
+  max_leverage: 1.0
+  margin_currency: "BTC"
+  margin_fx_source: "binance"
+  margin_symbol: "BTCUSDT"
+  margin_fx_interval: "1d"
+  margin_fx_debug: false
+  margin_fx_prefetch: true
+  margin_fx_to_usd: 50000.0
+  margin_timing_enabled: false
+  margin_timing_rule: "btc_daily_ma120"
+  margin_timing_ma_weeks: 120
+  margin_timing_log_switches: false
+
+output:
+  dir: "result"
+  chart_filename: "backtest_results_double_ma_unified_account.png"
+  metrics_filename: "backtest_metrics_double_ma_unified_account.md"
+  chart_figsize: [12, 10]

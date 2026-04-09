@@ -21,6 +21,7 @@ from .factor import factor_adx_ma
 from .factor import factor_double_ma_hedge
 from .factor import factor_btcdom
 from .engine.single_asset import run_single_asset
+from .engine.unified_account_simple import run_unified_account_simple
 from .report.quan_stats_report import generate_qs_report
 from .data.binance_price import BinancePriceClient
 from .config_loader import get_capital_params, get_output_paths, get_strategy_params, get_factor_config, get_hedge_config, load_config, PROJECT_ROOT
@@ -104,6 +105,42 @@ def _ensure_file_exists(path_str, label):
     """校验文件存在，给出更明确的配置报错。"""
     if not path_str or not os.path.isfile(path_str):
         raise FileNotFoundError(f"{label}不存在: {path_str}")
+
+
+def _build_margin_hold_series(df_index, capital_params, margin_fx_getter=None):
+    """
+    构建保证金择时序列。
+    当前支持：
+    - btc_daily_ma120: BTC 日线收盘价 > 日线 MA120 时持 BTC，否则持 USD
+    """
+    if not bool(capital_params.get("margin_timing_enabled", False)):
+        return None
+    if str(capital_params.get("margin_currency", "USD")).upper() != "BTC":
+        raise ValueError("保证金择时当前仅支持 margin_currency=BTC。")
+
+    rule = str(capital_params.get("margin_timing_rule", "btc_daily_ma120")).lower()
+    if rule != "btc_daily_ma120":
+        raise ValueError(f"不支持的保证金择时规则: {rule}")
+    if margin_fx_getter is None:
+        raise ValueError("启用保证金择时时，需要可用的 BTC 汇率数据。")
+
+    ma_days = max(1, int(capital_params.get("margin_timing_ma_weeks", 120)))
+    btc_close = pd.Series([float(margin_fx_getter(dt)) for dt in df_index], index=df_index, dtype=float)
+    daily_ma = btc_close.rolling(window=ma_days).mean()
+    hold_btc_daily = (btc_close > daily_ma).fillna(False)
+    return hold_btc_daily.astype(bool)
+
+
+def _build_collateral_price_series(df_index, capital_params, margin_fx_getter=None):
+    """构建统一账户所需的 BTC/USD 抵押物价格序列。"""
+    margin_currency = str(capital_params.get("margin_currency", "USD")).upper()
+    fallback_fx = capital_params.get("margin_fx_to_usd", 1.0) or 1.0
+    if margin_currency == "BTC":
+        if margin_fx_getter is not None:
+            return pd.Series([float(margin_fx_getter(dt)) for dt in df_index], index=df_index, dtype=float)
+        return pd.Series(float(fallback_fx), index=df_index, dtype=float)
+    # 统一账户若初始是 USD，且未启用 BTC 持仓切换，则给一个占位价格即可。
+    return pd.Series(float(fallback_fx), index=df_index, dtype=float)
 
 
 def _print_signals(df, buy_col=SIGNAL_BUY_COL, sell_col=SIGNAL_SELL_COL):
@@ -544,6 +581,107 @@ def run_btcdom_backtest(config=None, config_path=None):
         benchmark=df_clean["Market_Return"],
         output_path=qs_report_path,
         title=f"BTCDOM 复刻报告 ({paths['config_name']})",
+    )
+
+    return {"metrics": result_metrics, "df_clean": df_clean, "config": config, "trades": trades}
+
+
+def run_unified_account_backtest(config=None, config_path=None):
+    """
+    执行最简统一账户回测。
+    当前默认用于 double_ma + BTC/USD 抵押账户。
+    """
+    if config is None:
+        config = load_config(config_path)
+
+    resolved = config.get("_resolved", {})
+    data_path = resolved.get("data_path")
+    if not data_path or not os.path.isfile(data_path):
+        raise FileNotFoundError(f"数据文件不存在: {data_path}")
+
+    data_cfg = config.get("data", {})
+    start_date = data_cfg.get("start_date")
+    end_date = data_cfg.get("end_date")
+    strategy_params = get_strategy_params(config)
+    capital_params = get_capital_params(config)
+    margin_fx_getter = _build_margin_fx_getter(capital_params, start_date=start_date, end_date=end_date)
+    paths = get_output_paths(config)
+    out_cfg = config.get("output", {})
+
+    print(f"正在加载数据 ({start_date} 至 {end_date})...")
+    df = data_loader.load_data(data_path, start_date=start_date, end_date=end_date)
+    collateral_price_usd = _build_collateral_price_series(df.index, capital_params, margin_fx_getter)
+
+    parsed_factors = get_factor_config(config)
+    if len(parsed_factors) != 1 or parsed_factors[0]["type"] != "double_ma":
+        raise ValueError("最简统一账户回测当前仅支持单个 double_ma 因子。")
+
+    factor_cfg = parsed_factors[0]
+    factor_df = factor_double_ma.calculate_double_ma_factors(df.copy(), **dict(factor_cfg["params"]))
+    print("买卖信号:")
+    _print_signals(factor_df)
+
+    collateral_hold_btc = _build_margin_hold_series(df.index, capital_params, margin_fx_getter=margin_fx_getter)
+
+    factor_df, trades = run_unified_account_simple(
+        factor_df,
+        buy_signal=factor_df[SIGNAL_BUY_COL],
+        sell_signal=factor_df[SIGNAL_SELL_COL],
+        collateral_price_usd=collateral_price_usd,
+        entry_delay=strategy_params.get("entry_delay", 0),
+        exit_delay=strategy_params.get("exit_delay", 0),
+        initial_capital=capital_params.get("initial_capital", 100000),
+        initial_margin_currency=capital_params.get("margin_currency", "USD"),
+        position_ratio=capital_params.get("position_ratio", 1.0),
+        max_leverage=capital_params.get("max_leverage", 1.0),
+        debt_limit_ratio=1.0,
+        collateral_hold_btc=collateral_hold_btc,
+        log_switches=capital_params.get("margin_timing_log_switches", False),
+        price_col="Open",
+    )
+    for t in trades:
+        t["factor_name"] = factor_cfg["type"]
+
+    print("正在计算指标...")
+    df_clean = factor_df.dropna().copy()
+    df_clean = metrics.calculate_equity(df_clean)
+    result_metrics = metrics.calculate_metrics(df_clean, trades=trades)
+
+    report.print_metrics(result_metrics, title="最简统一账户策略表现报告")
+
+    out_dir = paths["output_dir"]
+    os.makedirs(out_dir, exist_ok=True)
+    trades_csv_path = os.path.join(out_dir, paths["trades_filename"])
+    report.save_trades_csv(trades, trades_csv_path)
+    md_path = os.path.join(out_dir, paths["metrics_filename"])
+    report.write_markdown(
+        md_path,
+        start_date,
+        end_date,
+        strategy_params,
+        result_metrics,
+        capital_params=capital_params,
+        trades=trades,
+        factor_config=factor_cfg,
+        title_suffix="(Unified Account Simple)",
+    )
+
+    charts.apply_style(out_cfg.get("font_sans_serif"))
+    chart_path = os.path.join(out_dir, paths["chart_filename"])
+    charts.generate_charts(
+        df_clean,
+        chart_path,
+        figsize=tuple(out_cfg.get("chart_figsize", [12, 10])),
+        strategy_label="统一账户策略",
+        benchmark_label="标的持有",
+    )
+
+    qs_report_path = os.path.join(out_dir, paths["qs_report_filename"])
+    generate_qs_report(
+        df_clean["Strategy_Return"],
+        benchmark=df_clean["Market_Return"],
+        output_path=qs_report_path,
+        title=f"最简统一账户报告 ({paths['config_name']})",
     )
 
     return {"metrics": result_metrics, "df_clean": df_clean, "config": config, "trades": trades}

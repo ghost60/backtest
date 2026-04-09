@@ -101,6 +101,7 @@ def run_single_asset(
     last_fx = float(margin_fx_to_usd)
     entry_fx = last_fx
     own_invested_margin = 0.0
+    entry_used_coin_collateral = use_coin_as_collateral
 
     def _resolve_fx(cur_date):
         nonlocal last_fx
@@ -124,6 +125,8 @@ def run_single_asset(
         date = df.index[i]
         price = float(df[price_col].iloc[i])
         current_fx = _resolve_fx(date)
+        current_cash_ccy = margin_currency
+        current_money_digits = money_digits
 
         # 1. 死叉信号检测（仅持仓时计数）
         if bool(sell_signal.iloc[i]):
@@ -141,12 +144,16 @@ def run_single_asset(
             # pnl = 卖出所得 - 归还借贷 - 自有资金净投入
             own_invested = entry_price * shares - borrowed
             pnl_usd = sell_proceeds_usd - borrowed - own_invested
-            pnl = round(pnl_usd / current_fx, money_digits)
+            pnl = round(pnl_usd / current_fx, current_money_digits) if use_coin_as_collateral else round(pnl_usd, current_money_digits)
             # 资金结算口径：
             # - 非 USD 保证金：始终持有币，仅将本次净利润/亏损按平仓汇率折回保证金币种
             # - USD 保证金：按既有配置选择 principal_plus_pnl / mark_to_market
-            if use_coin_as_collateral:
+            if entry_used_coin_collateral and use_coin_as_collateral:
                 cash += pnl_usd / current_fx
+            elif entry_used_coin_collateral and not use_coin_as_collateral:
+                cash += pnl_usd
+            elif not entry_used_coin_collateral and use_coin_as_collateral:
+                cash += (sell_proceeds_usd - borrowed) / current_fx
             elif margin_settlement_mode == "principal_plus_pnl":
                 cash += own_invested_margin + (pnl_usd / current_fx)
             else:
@@ -161,12 +168,12 @@ def run_single_asset(
                     "price": round(price, 2),#卖出价格
                     "shares": shares,#卖出股数
                     "position_value": round(sell_proceeds_usd, 2),#卖出总金额(USD)
-                    "position_value_margin": round(sell_proceeds_usd / current_fx, money_digits),#卖出总金额(保证金币种)
+                    "position_value_margin": round(sell_proceeds_usd / current_fx, current_money_digits) if use_coin_as_collateral else round(sell_proceeds_usd, current_money_digits),#卖出总金额(保证金币种)
                     "leverage": round(max_leverage, 2),#杠杆倍数
-                    "margin_currency": margin_currency,
+                    "margin_currency": current_cash_ccy,
                     "margin_fx_to_usd": round(current_fx, 6),
-                    "borrowed": round(borrowed / current_fx, money_digits),
-                    "cash": round(cash, money_digits),
+                    "borrowed": round(borrowed / current_fx, current_money_digits) if use_coin_as_collateral else round(borrowed, current_money_digits),
+                    "cash": round(cash, current_money_digits),
                     "pnl_usd": round(pnl_usd, 2),
                     "pnl": pnl,#本次交易盈亏
                     "pnl_pct": pnl_pct,#本次交易盈亏百分比
@@ -199,7 +206,7 @@ def run_single_asset(
 
             # 非 USD 保证金下，cash 表示始终持有的保证金币数量；
             # 买入时仅以其当下估值换算出可借入的 USD 名义仓位。
-            invest_amount_usd = cash * current_fx * float(position_ratio) * max_leverage
+            invest_amount_usd = (cash * current_fx if use_coin_as_collateral else cash) * float(position_ratio) * max_leverage
             shares = int(invest_amount_usd / price) if price > 0 else 0
             if shares == 0:
                 # 资金不足，放弃本次信号
@@ -208,13 +215,14 @@ def run_single_asset(
                 borrowed = 0.0
             else:
                 actual_cost_usd = shares * price
-                own_cash_usd = cash * current_fx
+                own_cash_usd = cash * current_fx if use_coin_as_collateral else cash
                 if use_coin_as_collateral:
                     borrowed = actual_cost_usd
                     own_invested_margin = 0.0
                 else:
                     borrowed = max(0.0, actual_cost_usd - own_cash_usd)   # 超出自有资金部分(USD)
                     own_invested_margin = (actual_cost_usd - borrowed) / current_fx
+                entry_used_coin_collateral = use_coin_as_collateral
                 entry_fx = current_fx
                 if not use_coin_as_collateral:
                     cash -= own_invested_margin  # USD 保证金时只扣除自有资金
@@ -232,12 +240,12 @@ def run_single_asset(
                     "price": round(price, 2),
                     "shares": shares,
                     "position_value": round(shares * price, 2),  # USD 名义仓位
-                    "position_value_margin": round((shares * price) / current_fx, money_digits),
+                    "position_value_margin": round((shares * price) / current_fx, current_money_digits) if use_coin_as_collateral else round(shares * price, current_money_digits),
                     "leverage": round(max_leverage, 2),
-                    "margin_currency": margin_currency,
+                    "margin_currency": current_cash_ccy,
                     "margin_fx_to_usd": round(current_fx, 6),
-                    "borrowed": round(borrowed / current_fx, money_digits),
-                    "cash": round(cash, money_digits),
+                    "borrowed": round(borrowed / current_fx, current_money_digits) if use_coin_as_collateral else round(borrowed, current_money_digits),
+                    "cash": round(cash, current_money_digits),
                     "pnl_usd": None,
                     "pnl": None,
                     "pnl_pct": None,
@@ -269,19 +277,23 @@ def run_single_asset(
     df["Portfolio_Cash"] = daily_cash
     df["Portfolio_Shares"] = daily_shares
     df["Margin_FX_To_USD"] = daily_fx_to_usd
+    df["Portfolio_Cash_USD"] = [
+        cash_v * fx_v if margin_currency != "USD" else cash_v
+        for cash_v, fx_v in zip(daily_cash, daily_fx_to_usd)
+    ]
     # 借贷内部以 USD 维护，落表转换为保证金币种，便于和 Cash/Total_Value 一致
     df["Portfolio_Borrowed"] = [
-        (b / fx) if fx else 0.0
+        (b / fx) if margin_currency != "USD" and fx else b
         for b, fx in zip(daily_borrowed, daily_fx_to_usd)
     ]
+    df["Portfolio_Borrowed_USD"] = daily_borrowed
     df["Total_Value"] = [
-        cash_v + (shares_v * close_v - borrowed_v) / fx_v
-        for cash_v, shares_v, close_v, borrowed_v, fx_v in zip(
-            daily_cash,
+        cash_usd + (shares_v * close_v - borrowed_v)
+        for cash_usd, shares_v, close_v, borrowed_v in zip(
+            df["Portfolio_Cash_USD"].tolist(),
             daily_shares,
             df["Close"].tolist(),
             daily_borrowed,
-            daily_fx_to_usd,
         )
     ]
     

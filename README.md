@@ -74,6 +74,12 @@ backtest/
 - 其中 `data.path` 是 BTC 数据，`hedge.symbols` 是做空篮子，`btcdom.long_weight` / `btcdom.short_weight` 控制多空权重。
 - 当前实现是固定权重、按日再平衡的组合复刻，不包含额外择时信号。
 
+## 最简统一账户
+
+- `double_ma` 的最简统一账户示例配置见 [config/double_ma_unified_account.yaml](/Users/lsq-mac/code/backtest/config/double_ma_unified_account.yaml)。
+- 该模式下，BTC 只作为抵押物，不因买入标的而减少；买入标的是借 USD 建仓，平仓时先还债。
+- 若启用 `capital.margin_timing_enabled`，BTC/USD 抵押资产切换仅在空仓时发生；该配置仅用于统一账户引擎。
+
 ## 扩展建议
 
 - **多标的 / 对冲**: 在 `config` 中增加 `symbols`、`hedge` 等，在 `backtest.py` 中根据配置分支调用不同策略（如现有 `5_30_backtest_tsla_azo.py` 中的对冲逻辑可抽成 `strategy_hedge.py`）。

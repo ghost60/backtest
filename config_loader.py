@@ -209,6 +209,10 @@ def get_capital_params(cfg):
         "margin_fx_interval": margin_fx_interval,
         "margin_fx_debug": margin_fx_debug,
         "margin_fx_prefetch": margin_fx_prefetch,
+        "margin_timing_enabled": bool(c.get("margin_timing_enabled", False)),
+        "margin_timing_rule": str(c.get("margin_timing_rule", "btc_daily_ma120")).lower(),
+        "margin_timing_ma_weeks": int(c.get("margin_timing_ma_weeks", 120)),
+        "margin_timing_log_switches": bool(c.get("margin_timing_log_switches", False)),
     }
 
 
